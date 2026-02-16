@@ -1,0 +1,111 @@
+<?php
+/**
+ * Main Router / Entry Point
+ */
+require_once __DIR__ . '/includes/session.php';
+
+require_once __DIR__ . '/includes/functions.php';
+
+// Security Middleware — Firewall, Rate Limiting, Intrusion Detection
+try { require_once __DIR__ . '/includes/security.php'; } catch (\Throwable $e) {}
+
+// Queue/Preloader - shows wait page if server is overloaded
+try { require_once __DIR__ . '/includes/queue.php'; } catch (\Throwable $e) {}
+
+// Visitor Tracking (Feature #8) - track every page visit
+try {
+    require_once __DIR__ . '/includes/tracker.php';
+    trackVisitor($page ?? 'home');
+} catch (Exception $e) {}
+
+// Simple Router
+$requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$basePath = parse_url(SITE_URL, PHP_URL_PATH) ?: '';
+$route = trim(str_replace($basePath, '', $requestUri), '/');
+$segments = $route ? explode('/', $route) : [];
+
+// Route matching
+$page = $segments[0] ?? 'home';
+$param1 = $segments[1] ?? null;
+$param2 = $segments[2] ?? null;
+
+switch ($page) {
+    case '':
+    case 'home':
+        include __DIR__ . '/pages/home.php';
+        break;
+        
+    case 'product':
+        $_GET['slug'] = $param1;
+        include __DIR__ . '/pages/product.php';
+        break;
+        
+    case 'category':
+        $_GET['slug'] = $param1;
+        include __DIR__ . '/pages/category.php';
+        break;
+    
+    case 'shop':
+    case 'all-products':
+    case 'products':
+        include __DIR__ . '/pages/shop.php';
+        break;
+        
+    case 'search':
+        include __DIR__ . '/pages/search.php';
+        break;
+        
+    case 'cart':
+        include __DIR__ . '/pages/cart.php';
+        break;
+        
+    case 'page':
+        $_GET['slug'] = $param1;
+        include __DIR__ . '/pages/static-page.php';
+        break;
+        
+    case 'track-order':
+        include __DIR__ . '/pages/track-order.php';
+        break;
+        
+    case 'order-success':
+        include __DIR__ . '/pages/order-success.php';
+        break;
+        
+    case 'categories':
+        include __DIR__ . '/pages/categories.php';
+        break;
+        
+    case 'checkout':
+        include __DIR__ . '/pages/cart.php';
+        break;
+        
+    case 'login':
+    case 'register':
+        include __DIR__ . '/pages/login.php';
+        break;
+    
+    case 'forgot-password':
+        include __DIR__ . '/pages/forgot-password.php';
+        break;
+    
+    case 'reset-password':
+        include __DIR__ . '/pages/reset-password.php';
+        break;
+    
+    case 'account':
+        include __DIR__ . '/pages/account.php';
+        break;
+        
+    default:
+        // Try product slug first
+        $product = getProductBySlug($page);
+        if ($product) {
+            $_GET['slug'] = $page;
+            include __DIR__ . '/pages/product.php';
+        } else {
+            http_response_code(404);
+            include __DIR__ . '/pages/404.php';
+        }
+        break;
+}
