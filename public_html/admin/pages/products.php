@@ -31,6 +31,15 @@ $page = max(1, intval($_GET['page'] ?? 1));
 $where = 'p.is_active = 1';
 $params = [];
 
+// Ensure split columns exist
+try { ensureVariationSplitColumns(); } catch (\Throwable $e) {}
+
+// Also show hidden parents (is_active=0) that have split children, so admin can edit them
+$showParents = $_GET['show_parents'] ?? '';
+if ($showParents === '1') {
+    $where = '(p.is_active = 1 OR (p.is_active = 0 AND p.id IN (SELECT DISTINCT parent_product_id FROM products WHERE parent_product_id IS NOT NULL)))';
+}
+
 if ($search) { $where .= " AND (p.name LIKE ? OR p.sku LIKE ?)"; $params[] = "%{$search}%"; $params[] = "%{$search}%"; }
 if ($category) { $where .= " AND p.category_id = ?"; $params[] = $category; }
 if ($stock === 'low') { $where .= " AND p.stock_quantity <= p.low_stock_threshold AND p.manage_stock = 1"; }
@@ -74,6 +83,21 @@ require_once __DIR__ . '/../includes/header.php';
             <a href="<?= adminUrl('pages/product-form.php') ?>" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 text-center">+ Add Product</a>
         </div>
     </form>
+    <?php
+    // Show parents toggle (only relevant in split mode)
+    try {
+        $__splitCount = intval($db->fetch("SELECT COUNT(*) as cnt FROM products WHERE parent_product_id IS NOT NULL AND parent_product_id > 0")['cnt'] ?? 0);
+    } catch (\Throwable $e) { $__splitCount = 0; }
+    if ($__splitCount > 0): ?>
+    <div class="flex items-center gap-3 mt-3 pt-3 border-t">
+        <span class="text-xs text-indigo-600"><i class="fas fa-layer-group mr-1"></i> Split mode active: <?= $__splitCount ?> variation products</span>
+        <?php if ($showParents !== '1'): ?>
+        <a href="?<?= http_build_query(array_merge($_GET, ['show_parents' => '1'])) ?>" class="text-xs text-indigo-600 underline hover:text-indigo-800">Show hidden parents</a>
+        <?php else: ?>
+        <a href="?<?= http_build_query(array_diff_key($_GET, ['show_parents' => ''])) ?>" class="text-xs text-indigo-600 underline hover:text-indigo-800">Hide parents</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
 </div>
 
 <!-- Products Table -->
@@ -145,7 +169,13 @@ require_once __DIR__ . '/../includes/header.php';
                     <td class="px-4 py-3 text-gray-600"><?= $p['sales_count'] ?></td>
                     <td class="px-4 py-3">
                         <?php if ($p['is_featured']): ?><span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full mr-1">Featured</span><?php endif; ?>
-                        <?php if ($p['is_on_sale']): ?><span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Sale</span><?php endif; ?>
+                        <?php if ($p['is_on_sale']): ?><span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full mr-1">Sale</span><?php endif; ?>
+                        <?php if (!empty($p['parent_product_id'])): ?>
+                        <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full" title="Split from parent #<?= intval($p['parent_product_id']) ?>">📦 <?= e($p['variant_label'] ?? 'Split') ?></span>
+                        <?php endif; ?>
+                        <?php if (empty($p['is_active'])): ?>
+                        <span class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full" title="Hidden parent (split mode)">👁 Hidden</span>
+                        <?php endif; ?>
                     </td>
                     <td class="px-4 py-3">
                         <div class="flex gap-1">

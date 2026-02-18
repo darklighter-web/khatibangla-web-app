@@ -321,9 +321,22 @@ function generateProductSKU($productId = null) {
 }
 
 function generateVariantSKU($productSku, $variantValue) {
-    $suffix = strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', substr($variantValue, 0, 6)));
-    return $productSku . '-' . ($suffix ?: 'V');
+    // Clean up: keep alphanumeric, trim, uppercase, max 12 chars
+    $suffix = strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', $variantValue));
+    $suffix = substr($suffix, 0, 12);
+    if (!$suffix) $suffix = 'V';
+    $sku = $productSku . '-' . $suffix;
+    
+    // Ensure uniqueness
+    $db = Database::getInstance();
+    $exists = $db->fetch("SELECT id FROM products WHERE sku = ?", [$sku]);
+    if ($exists) {
+        $existsVar = $db->fetch("SELECT id FROM product_variants WHERE sku = ?", [$sku]);
+        if ($existsVar) $sku .= '-' . rand(10, 99);
+    }
+    return $sku;
 }
+
 
 function searchProductsForAutocomplete($query, $limit = 8) {
     $db = Database::getInstance();
@@ -965,12 +978,18 @@ function createOrder($data) {
         }
     } catch (Exception $e) {}
     
-    // Recover incomplete orders (Feature #1)
+    // Recover incomplete orders (Feature #1) — handle both column names
     try {
         $sessionId = session_id();
         $db->query("UPDATE incomplete_orders SET recovered = 1, recovered_order_id = ? WHERE (session_id = ? OR customer_phone = ?) AND recovered = 0", 
             [$orderId, $sessionId, $data['phone']]);
-    } catch (Exception $e) {}
+    } catch (\Exception $e) {
+        try {
+            $sessionId = session_id();
+            $db->query("UPDATE incomplete_orders SET is_recovered = 1, recovered_order_id = ? WHERE (session_id = ? OR customer_phone = ?) AND is_recovered = 0",
+                [$orderId, $sessionId, $data['phone']]);
+        } catch (\Exception $e2) {}
+    }
     
     // Auto-save billing address for logged-in users (new address detection)
     if ($loggedInCustId > 0) {
@@ -1429,4 +1448,240 @@ function refundOrderCreditsOnCancel($orderId) {
     );
     
     return true;
+}
+
+// ============================================================
+// VARIATION SPLIT / MERGE SYSTEM
+// ============================================================
+
+/**
+ * Ensure parent_product_id and variant_label columns exist in products table.
+ */
+function ensureVariationSplitColumns() {
+    $db = Database::getInstance();
+    $cols = ['parent_product_id INT DEFAULT NULL', 'variant_label VARCHAR(100) DEFAULT NULL'];
+    foreach ($cols as $colDef) {
+        try { $db->query("ALTER TABLE products ADD COLUMN {$colDef}"); } catch (\Throwable $e) {}
+    }
+    try { $db->query("ALTER TABLE products ADD INDEX idx_parent_product (parent_product_id)"); } catch (\Throwable $e) {}
+}
+
+/**
+ * Check if variation split mode is enabled.
+ */
+function isVariationSplitMode() {
+    return getSetting('variation_display_mode', 'combined') === 'split';
+}
+
+/**
+ * Split a single product's variations into separate product entries.
+ * Returns array of created child product IDs.
+ */
+function splitProductVariations($productId) {
+    $db = Database::getInstance();
+    ensureVariationSplitColumns();
+
+    $product = $db->fetch("SELECT * FROM products WHERE id = ?", [$productId]);
+    if (!$product) return [];
+
+    // Only split products that have 'variation' type variants
+    $variations = $db->fetchAll(
+        "SELECT * FROM product_variants WHERE product_id = ? AND is_active = 1 AND option_type = 'variation' ORDER BY sort_order, id",
+        [$productId]
+    );
+    if (empty($variations)) return [];
+
+    // Check if already split
+    $existingSplits = intval($db->fetch("SELECT COUNT(*) as cnt FROM products WHERE parent_product_id = ?", [$productId])['cnt'] ?? 0);
+    if ($existingSplits > 0) return [];
+
+    $childIds = [];
+    $parentSku = $product['sku'] ?: generateProductSKU($productId);
+    $parentImages = $db->fetchAll("SELECT * FROM product_images WHERE product_id = ? ORDER BY sort_order", [$productId]);
+
+    foreach ($variations as $var) {
+        $varValue = $var['variant_value'];
+        $varPrice = floatval($var['absolute_price'] ?? 0);
+        if ($varPrice <= 0) $varPrice = floatval($product['regular_price']);
+
+        // Generate unique SKU: ParentSKU-VariantValue
+        $varSuffix = strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', $varValue));
+        $varSuffix = $varSuffix ?: 'V' . $var['id'];
+        $childSku = $parentSku . '-' . $varSuffix;
+
+        // Ensure SKU uniqueness
+        $skuCheck = $db->fetch("SELECT id FROM products WHERE sku = ?", [$childSku]);
+        if ($skuCheck) $childSku .= '-' . $var['id'];
+
+        // Generate unique slug
+        $baseSlug = $product['slug'] . '-' . strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', $varValue));
+        $slug = $baseSlug;
+        $slugCheck = $db->fetch("SELECT id FROM products WHERE slug = ?", [$slug]);
+        if ($slugCheck) $slug = $baseSlug . '-' . $var['id'];
+
+        // Build child product name
+        $childName = $product['name'] . ' - ' . $varValue;
+        $childNameBn = $product['name_bn'] ? ($product['name_bn'] . ' - ' . $varValue) : '';
+
+        $childData = [
+            'name'                  => $childName,
+            'name_bn'               => $childNameBn,
+            'slug'                  => $slug,
+            'sku'                   => $childSku,
+            'barcode'               => null,
+            'short_description'     => $product['short_description'] ?? '',
+            'description'           => $product['description'] ?? '',
+            'regular_price'         => $varPrice,
+            'sale_price'            => null,
+            'cost_price'            => $product['cost_price'] ?? 0,
+            'category_id'           => $product['category_id'],
+            'brand'                 => $product['brand'] ?? null,
+            'weight'                => $product['weight'] ?? null,
+            'weight_unit'           => $product['weight_unit'] ?? 'kg',
+            'stock_quantity'        => intval($var['stock_quantity'] ?? 0),
+            'low_stock_threshold'   => $product['low_stock_threshold'] ?? 5,
+            'stock_status'          => (intval($var['stock_quantity'] ?? 0) > 0) ? 'in_stock' : 'out_of_stock',
+            'manage_stock'          => $product['manage_stock'] ?? 1,
+            'is_featured'           => 0,
+            'is_active'             => 1,
+            'sort_order'            => $product['sort_order'] ?? 0,
+            'is_on_sale'            => 0,
+            'tags'                  => $product['tags'] ?? '',
+            'meta_title'            => $childName,
+            'meta_description'      => $product['meta_description'] ?? '',
+            'featured_image'        => $product['featured_image'] ?? null,
+            'parent_product_id'     => $productId,
+            'variant_label'         => $varValue,
+            'require_customer_upload'   => $product['require_customer_upload'] ?? 0,
+            'customer_upload_label'     => $product['customer_upload_label'] ?? '',
+            'customer_upload_required'  => $product['customer_upload_required'] ?? 0,
+            'bundle_name'           => '',
+            'store_credit_enabled'  => $product['store_credit_enabled'] ?? 0,
+            'store_credit_amount'   => $product['store_credit_amount'] ?? 0,
+            'created_at'            => date('Y-m-d H:i:s'),
+            'updated_at'            => date('Y-m-d H:i:s'),
+        ];
+
+        $childId = $db->insert('products', $childData);
+        if (!$childId) continue;
+
+        // Copy parent images to child
+        foreach ($parentImages as $img) {
+            $db->insert('product_images', [
+                'product_id' => $childId,
+                'image_path' => $img['image_path'],
+                'alt_text'   => $img['alt_text'] ?? null,
+                'sort_order' => $img['sort_order'],
+                'is_primary' => $img['is_primary'],
+            ]);
+        }
+
+        // Copy addons to child
+        $addons = $db->fetchAll(
+            "SELECT * FROM product_variants WHERE product_id = ? AND option_type = 'addon' AND is_active = 1",
+            [$productId]
+        );
+        foreach ($addons as $addon) {
+            $addonSku = $childSku . '-' . strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', substr($addon['variant_value'], 0, 6)));
+            $db->insert('product_variants', [
+                'product_id'       => $childId,
+                'variant_name'     => $addon['variant_name'],
+                'variant_value'    => $addon['variant_value'],
+                'option_type'      => 'addon',
+                'price_adjustment' => $addon['price_adjustment'],
+                'absolute_price'   => null,
+                'stock_quantity'   => $addon['stock_quantity'],
+                'sku'              => $addonSku,
+                'is_active'        => 1,
+                'is_default'       => $addon['is_default'] ?? 0,
+                'sort_order'       => $addon['sort_order'] ?? 0,
+            ]);
+        }
+
+        $childIds[] = $childId;
+    }
+
+    // Hide parent product
+    if (!empty($childIds)) {
+        $db->update('products', ['is_active' => 0], 'id = ?', [$productId]);
+    }
+
+    return $childIds;
+}
+
+/**
+ * Merge split child products back into parent.
+ */
+function mergeProductVariations($parentProductId) {
+    $db = Database::getInstance();
+    ensureVariationSplitColumns();
+
+    $parent = $db->fetch("SELECT * FROM products WHERE id = ?", [$parentProductId]);
+    if (!$parent) return false;
+
+    $children = $db->fetchAll("SELECT * FROM products WHERE parent_product_id = ?", [$parentProductId]);
+    if (empty($children)) return false;
+
+    // Sync stock from children back to parent variants
+    $variations = $db->fetchAll(
+        "SELECT * FROM product_variants WHERE product_id = ? AND option_type = 'variation' ORDER BY id",
+        [$parentProductId]
+    );
+    foreach ($variations as $var) {
+        foreach ($children as $child) {
+            if (($child['variant_label'] ?? '') === $var['variant_value']) {
+                $db->query("UPDATE product_variants SET stock_quantity = ? WHERE id = ?", [$child['stock_quantity'], $var['id']]);
+                break;
+            }
+        }
+    }
+
+    // Delete children and their data
+    foreach ($children as $child) {
+        $db->delete('product_images', 'product_id = ?', [$child['id']]);
+        $db->delete('product_variants', 'product_id = ?', [$child['id']]);
+        try { $db->delete('product_upsells', 'product_id = ?', [$child['id']]); } catch (\Throwable $e) {}
+        try { $db->delete('product_bundles', 'product_id = ?', [$child['id']]); } catch (\Throwable $e) {}
+        $db->delete('products', 'id = ?', [$child['id']]);
+    }
+
+    // Re-activate parent
+    $db->update('products', ['is_active' => 1], 'id = ?', [$parentProductId]);
+    return true;
+}
+
+/**
+ * Split ALL eligible products (when toggle ON).
+ */
+function autoSplitAllProducts() {
+    $db = Database::getInstance();
+    ensureVariationSplitColumns();
+
+    $products = $db->fetchAll("
+        SELECT DISTINCT p.id FROM products p
+        INNER JOIN product_variants pv ON pv.product_id = p.id AND pv.option_type = 'variation' AND pv.is_active = 1
+        WHERE p.is_active = 1 AND (p.parent_product_id IS NULL OR p.parent_product_id = 0)
+    ");
+
+    $totalSplit = 0;
+    foreach ($products as $row) {
+        $children = splitProductVariations($row['id']);
+        $totalSplit += count($children);
+    }
+    return $totalSplit;
+}
+
+/**
+ * Merge ALL split products back (when toggle OFF).
+ */
+function autoMergeAllProducts() {
+    $db = Database::getInstance();
+    ensureVariationSplitColumns();
+
+    $parents = $db->fetchAll("SELECT DISTINCT parent_product_id FROM products WHERE parent_product_id IS NOT NULL AND parent_product_id > 0");
+    $totalMerged = 0;
+    foreach ($parents as $row) {
+        if (mergeProductVariations($row['parent_product_id'])) $totalMerged++;
+    }
+    return $totalMerged;
 }

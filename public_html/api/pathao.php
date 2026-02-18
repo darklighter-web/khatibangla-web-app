@@ -2,7 +2,7 @@
 /**
  * Pathao Courier Merchant API Integration
  * Production: https://api-hermes.pathao.com
- * Sandbox:    https://hermes-api.p-stageenv.xyz
+ * Sandbox:    https://courier-api-sandbox.pathao.com
  */
 class PathaoAPI {
     private $baseUrl;
@@ -24,7 +24,7 @@ class PathaoAPI {
         $this->tokenExpiry  = intval($this->setting('pathao_token_expiry'));
         $env = $this->setting('pathao_environment') ?: 'production';
         $this->baseUrl = $env === 'sandbox'
-            ? 'https://hermes-api.p-stageenv.xyz'
+            ? 'https://courier-api-sandbox.pathao.com'
             : 'https://api-hermes.pathao.com';
     }
 
@@ -70,7 +70,7 @@ class PathaoAPI {
         $this->password     = $data['password'] ?? $this->password;
         $env = $data['environment'] ?? 'production';
         $this->baseUrl = $env === 'sandbox'
-            ? 'https://hermes-api.p-stageenv.xyz'
+            ? 'https://courier-api-sandbox.pathao.com'
             : 'https://api-hermes.pathao.com';
     }
 
@@ -131,7 +131,7 @@ class PathaoAPI {
     // ========================
     // LOCATION ENDPOINTS
     // ========================
-    public function getCities()          { return $this->authed('GET', '/aladdin/api/v1/countries/1/city-list'); }
+    public function getCities()          { return $this->authed('GET', '/aladdin/api/v1/city-list'); }
     public function getZones($cityId)    { return $this->authed('GET', "/aladdin/api/v1/cities/{$cityId}/zone-list"); }
     public function getAreas($zoneId)    { return $this->authed('GET', "/aladdin/api/v1/zones/{$zoneId}/area-list"); }
 
@@ -144,7 +144,7 @@ class PathaoAPI {
     // ORDERS
     // ========================
     public function createOrder($data)               { return $this->authed('POST', '/aladdin/api/v1/orders', $data); }
-    public function getOrderDetails($consignmentId)   { return $this->authed('GET', "/aladdin/api/v1/orders/{$consignmentId}"); }
+    public function getOrderDetails($consignmentId)   { return $this->authed('GET', "/aladdin/api/v1/orders/{$consignmentId}/info"); }
     public function getPriceCalculation($data)        { return $this->authed('POST', '/aladdin/api/v1/merchant/price-plan', $data); }
 
     // ========================
@@ -793,21 +793,71 @@ class PathaoAPI {
     // AREA STATS FOR DASHBOARD
     // ========================
     public function getAreaStats($days = 90) {
+        // First ensure name columns exist (safe migration)
+        foreach (['delivery_city_name VARCHAR(100) DEFAULT NULL', 'delivery_zone_name VARCHAR(100) DEFAULT NULL', 'delivery_area_name VARCHAR(100) DEFAULT NULL'] as $colDef) {
+            try { $this->db->query("ALTER TABLE orders ADD COLUMN {$colDef}"); } catch (\Throwable $e) {}
+        }
         try {
             return $this->db->fetchAll("
                 SELECT 
-                    COALESCE(NULLIF(customer_district,''), COALESCE(NULLIF(customer_city,''),'Unknown')) as area_name,
+                    COALESCE(
+                        NULLIF(delivery_area_name,''),
+                        NULLIF(delivery_zone_name,''),
+                        NULLIF(delivery_city_name,''),
+                        NULLIF(customer_district,''),
+                        NULLIF(customer_city,''),
+                        'Unknown'
+                    ) as area_name,
                     COUNT(*) as total_orders,
                     SUM(CASE WHEN order_status='delivered' THEN 1 ELSE 0 END) as delivered,
                     SUM(CASE WHEN order_status IN ('cancelled','returned') THEN 1 ELSE 0 END) as failed,
-                    SUM(total) as revenue
+                    COALESCE(SUM(total), 0) as revenue
                 FROM orders
                 WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
                 GROUP BY area_name
                 ORDER BY total_orders DESC
                 LIMIT 25
             ", [$days]);
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Get city-level stats for Bangladesh map visualization.
+     * Groups by delivery_city_name (Pathao city), falls back to customer_district.
+     */
+    public function getCityStats($days = 90) {
+        foreach (['delivery_city_name VARCHAR(100) DEFAULT NULL', 'delivery_zone_name VARCHAR(100) DEFAULT NULL', 'delivery_area_name VARCHAR(100) DEFAULT NULL'] as $colDef) {
+            try { $this->db->query("ALTER TABLE orders ADD COLUMN {$colDef}"); } catch (\Throwable $e) {}
+        }
+        try {
+            return $this->db->fetchAll("
+                SELECT 
+                    COALESCE(
+                        NULLIF(delivery_city_name,''),
+                        NULLIF(customer_district,''),
+                        NULLIF(customer_city,''),
+                        'Unknown'
+                    ) as city_name,
+                    COUNT(*) as total_orders,
+                    SUM(CASE WHEN order_status='delivered' THEN 1 ELSE 0 END) as delivered,
+                    SUM(CASE WHEN order_status IN ('cancelled','returned') THEN 1 ELSE 0 END) as failed,
+                    SUM(CASE WHEN order_status IN ('cancelled','returned') THEN 1 ELSE 0 END) as returned,
+                    ROUND(
+                        SUM(CASE WHEN order_status='delivered' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 1
+                    ) as success_rate,
+                    ROUND(
+                        SUM(CASE WHEN order_status IN ('cancelled','returned') THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 1
+                    ) as return_rate,
+                    COALESCE(SUM(total), 0) as revenue
+                FROM orders
+                WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+                GROUP BY city_name
+                HAVING city_name != 'Unknown'
+                ORDER BY total_orders DESC
+            ", [$days]);
+        } catch (\Throwable $e) {
             return [];
         }
     }

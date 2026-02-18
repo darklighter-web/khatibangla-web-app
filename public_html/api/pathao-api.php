@@ -210,26 +210,40 @@ try {
             echo json_encode(['success' => true, 'data' => $stats]);
             break;
 
+        case 'city_stats':
+            $days = intval($_GET['days'] ?? 90);
+            $stats = $pathao->getCityStats($days);
+            echo json_encode(['success' => true, 'data' => $stats]);
+            break;
+
         case 'save_order_location':
             $data = $__jsonInput ?: $_POST;
             $orderId = intval($data['order_id'] ?? 0);
-            $cityId = intval($data['city_id'] ?? 0);
-            $zoneId = intval($data['zone_id'] ?? 0);
-            $areaId = intval($data['area_id'] ?? 0);
+            $cityId   = intval($data['city_id'] ?? 0);
+            $zoneId   = intval($data['zone_id'] ?? 0);
+            $areaId   = intval($data['area_id'] ?? 0);
+            $cityName = trim($data['city_name'] ?? '');
+            $zoneName = trim($data['zone_name'] ?? '');
+            $areaName = trim($data['area_name'] ?? '');
             if (!$orderId) { echo json_encode(['success' => false, 'message' => 'order_id required']); break; }
             $db = Database::getInstance();
-            $updates = [];
-            if ($cityId) $updates['pathao_city_id'] = $cityId;
-            if ($zoneId) $updates['pathao_zone_id'] = $zoneId;
-            if ($areaId) $updates['pathao_area_id'] = $areaId;
-            if (!empty($updates)) {
-                // Add columns if they don't exist yet (safe migration)
-                foreach (['pathao_city_id', 'pathao_zone_id', 'pathao_area_id'] as $col) {
-                    try { $db->query("ALTER TABLE orders ADD COLUMN {$col} INT DEFAULT NULL"); } catch (Exception $e) {}
-                }
-                $updates['updated_at'] = date('Y-m-d H:i:s');
-                $db->update('orders', $updates, 'id = ?', [$orderId]);
+
+            // Ensure columns exist
+            foreach (['pathao_city_id INT DEFAULT NULL', 'pathao_zone_id INT DEFAULT NULL', 'pathao_area_id INT DEFAULT NULL', 'delivery_city_name VARCHAR(100) DEFAULT NULL', 'delivery_zone_name VARCHAR(100) DEFAULT NULL', 'delivery_area_name VARCHAR(100) DEFAULT NULL'] as $colDef) {
+                try { $db->query("ALTER TABLE orders ADD COLUMN {$colDef}"); } catch (\Throwable $e) {}
             }
+
+            $updates = ['updated_at' => date('Y-m-d H:i:s')];
+            // Always write IDs (even 0/null to clear)
+            $updates['pathao_city_id'] = $cityId ?: null;
+            $updates['pathao_zone_id'] = $zoneId ?: null;
+            $updates['pathao_area_id'] = $areaId ?: null;
+            // Always write names (empty string to clear)
+            $updates['delivery_city_name'] = $cityName !== '' ? $cityName : null;
+            $updates['delivery_zone_name'] = $zoneName !== '' ? $zoneName : null;
+            $updates['delivery_area_name'] = $areaName !== '' ? $areaName : null;
+
+            $db->update('orders', $updates, 'id = ?', [$orderId]);
             echo json_encode(['success' => true]);
             break;
 
@@ -290,6 +304,181 @@ try {
                 }
             }
             echo json_encode(['success' => true, 'message' => 'Fraud check credentials saved']);
+            break;
+
+        case 'upload_pathao_order':
+            $data = $__jsonInput ?: $_POST;
+            $orderId = intval($data['order_id'] ?? 0);
+            if (!$orderId) { echo json_encode(['success' => false, 'message' => 'order_id required']); break; }
+            $db = Database::getInstance();
+            $o = $db->fetch("SELECT * FROM orders WHERE id = ?", [$orderId]);
+            if (!$o) { echo json_encode(['success' => false, 'message' => 'Order not found']); break; }
+
+            $cityId = intval($data['recipient_city'] ?? ($o['pathao_city_id'] ?? 0));
+            $zoneId = intval($data['recipient_zone'] ?? ($o['pathao_zone_id'] ?? 0));
+            $areaId = intval($data['recipient_area'] ?? ($o['pathao_area_id'] ?? 0));
+            if (!$cityId || !$zoneId) { echo json_encode(['success' => false, 'message' => 'City and Zone required for Pathao']); break; }
+
+            // Capture area names from JS (sent alongside IDs)
+            $cityName = trim($data['city_name'] ?? '');
+            $zoneName = trim($data['zone_name'] ?? '');
+            $areaName = trim($data['area_name'] ?? '');
+
+            $storeId = intval($data['store_id'] ?? 0);
+            if (!$storeId) {
+                try { $row = $db->fetch("SELECT setting_value FROM site_settings WHERE setting_key = 'store_id'"); $storeId = intval($row['setting_value'] ?? 0); } catch (\Throwable $e) {}
+            }
+            $codAmount = ($o['payment_method'] === 'cod') ? floatval($o['total']) : 0;
+
+            // Build product description
+            $itemDesc = 'Order #' . $o['order_number'];
+            try {
+                $items = $db->fetchAll("SELECT product_name, quantity FROM order_items WHERE order_id = ?", [$orderId]);
+                $parts = [];
+                foreach ($items as $it) $parts[] = $it['product_name'] . ($it['quantity'] > 1 ? ' x' . $it['quantity'] : '');
+                if ($parts) $itemDesc = implode(', ', $parts);
+            } catch (\Throwable $e) {}
+
+            $payload = [
+                'store_id'            => $storeId,
+                'merchant_order_id'   => $o['order_number'],
+                'recipient_name'      => $o['customer_name'],
+                'recipient_phone'     => $o['customer_phone'],
+                'recipient_address'   => $o['customer_address'],
+                'recipient_city'      => $cityId,
+                'recipient_zone'      => $zoneId,
+                'recipient_area'      => $areaId,
+                'delivery_type'       => 48,
+                'item_type'           => 2,
+                'item_quantity'       => 1,
+                'item_weight'         => 0.5,
+                'amount_to_collect'   => $codAmount,
+                'item_description'    => $itemDesc,
+                'special_instruction' => $o['notes'] ?? '',
+            ];
+            if (!$areaId) unset($payload['recipient_area']);
+
+            $resp = $pathao->createOrder($payload);
+
+            if (!empty($resp['data']['consignment_id'])) {
+                $cid = $resp['data']['consignment_id'];
+                // Ensure name columns exist
+                foreach (['delivery_city_name VARCHAR(100) DEFAULT NULL', 'delivery_zone_name VARCHAR(100) DEFAULT NULL', 'delivery_area_name VARCHAR(100) DEFAULT NULL'] as $colDef) {
+                    try { $db->query("ALTER TABLE orders ADD COLUMN {$colDef}"); } catch (\Throwable $e) {}
+                }
+                $updateData = [
+                    'courier_consignment_id' => $cid,
+                    'courier_name'           => 'Pathao',
+                    'courier_tracking_id'    => $cid,
+                    'courier_status'         => 'pending',
+                    'courier_uploaded_at'    => date('Y-m-d H:i:s'),
+                    'order_status'           => 'shipped',
+                    'pathao_city_id'         => $cityId,
+                    'pathao_zone_id'         => $zoneId,
+                    'pathao_area_id'         => $areaId,
+                    'updated_at'             => date('Y-m-d H:i:s'),
+                ];
+                if ($cityName !== '') $updateData['delivery_city_name'] = $cityName;
+                if ($zoneName !== '') $updateData['delivery_zone_name'] = $zoneName;
+                if ($areaName !== '') $updateData['delivery_area_name'] = $areaName;
+                $db->update('orders', $updateData, 'id = ?', [$orderId]);
+                try { $db->insert('courier_uploads', ['order_id'=>$orderId,'courier_provider'=>'pathao','consignment_id'=>$cid,'status'=>'uploaded','response_data'=>json_encode($resp)]); } catch (\Throwable $e) {}
+                try { $db->insert('order_status_history', ['order_id'=>$orderId,'status'=>'shipped','note'=>'Uploaded to Pathao. CID: '.$cid,'changed_by'=>$_SESSION['admin_id']??null]); } catch (\Throwable $e) {}
+                echo json_encode(['success' => true, 'consignment_id' => $cid, 'message' => 'Uploaded to Pathao']);
+            } else {
+                $errMsg = $resp['message'] ?? 'Pathao upload failed';
+                if (!empty($resp['errors'])) $errMsg .= ' — ' . json_encode($resp['errors']);
+                echo json_encode(['success' => false, 'message' => $errMsg, 'raw' => $resp]);
+            }
+            break;
+
+        case 'toggle_area_backfill':
+            $data = $__jsonInput ?: $_POST;
+            $db = Database::getInstance();
+            $enabled = intval($data['enabled'] ?? 0) ? '1' : '0';
+            $exists = $db->fetch("SELECT id FROM site_settings WHERE setting_key = 'area_backfill_enabled'");
+            if ($exists) { $db->update('site_settings', ['setting_value' => $enabled], 'setting_key = ?', ['area_backfill_enabled']); }
+            else { $db->insert('site_settings', ['setting_key' => 'area_backfill_enabled', 'setting_value' => $enabled, 'setting_type' => 'text', 'setting_group' => 'courier', 'label' => 'Auto Backfill Area Names']); }
+            echo json_encode(['success' => true, 'enabled' => $enabled === '1']);
+            break;
+
+        case 'backfill_area_names':
+            // Resolve Pathao city/zone/area names for orders that have IDs but no names
+            $db = Database::getInstance();
+            // Ensure columns exist
+            foreach (['delivery_city_name VARCHAR(100) DEFAULT NULL', 'delivery_zone_name VARCHAR(100) DEFAULT NULL', 'delivery_area_name VARCHAR(100) DEFAULT NULL'] as $colDef) {
+                try { $db->query("ALTER TABLE orders ADD COLUMN {$colDef}"); } catch (\Throwable $e) {}
+            }
+
+            // Get orders with pathao IDs but missing area names (max 50 per call)
+            $rows = $db->fetchAll("SELECT id, pathao_city_id, pathao_zone_id, pathao_area_id FROM orders WHERE pathao_city_id IS NOT NULL AND pathao_city_id > 0 AND (delivery_city_name IS NULL OR delivery_city_name = '') ORDER BY id DESC LIMIT 50");
+            if (empty($rows)) { echo json_encode(['success' => true, 'resolved' => 0, 'message' => 'All orders already have area names']); break; }
+
+            // Fetch all cities once
+            $citiesResp = $pathao->getCities();
+            $cityList = $citiesResp['data']['data'] ?? $citiesResp['data'] ?? [];
+            $cityMap = [];
+            foreach ($cityList as $c) $cityMap[intval($c['city_id'] ?? 0)] = $c['city_name'] ?? '';
+
+            // Cache zones/areas per ID to minimize API calls
+            $zoneCache = [];
+            $areaCache = [];
+            $resolved = 0;
+
+            foreach ($rows as $row) {
+                $cId = intval($row['pathao_city_id'] ?? 0);
+                $zId = intval($row['pathao_zone_id'] ?? 0);
+                $aId = intval($row['pathao_area_id'] ?? 0);
+
+                $cName = $cityMap[$cId] ?? '';
+                $zName = '';
+                $aName = '';
+
+                // Resolve zone name
+                if ($zId && $cId) {
+                    if (!isset($zoneCache[$cId])) {
+                        try {
+                            $zr = $pathao->getZones($cId);
+                            $zoneCache[$cId] = [];
+                            foreach (($zr['data']['data'] ?? $zr['data'] ?? []) as $z) $zoneCache[$cId][intval($z['zone_id'] ?? 0)] = $z['zone_name'] ?? '';
+                        } catch (\Throwable $e) { $zoneCache[$cId] = []; }
+                    }
+                    $zName = $zoneCache[$cId][$zId] ?? '';
+                }
+
+                // Resolve area name
+                if ($aId && $zId) {
+                    if (!isset($areaCache[$zId])) {
+                        try {
+                            $ar = $pathao->getAreas($zId);
+                            $areaCache[$zId] = [];
+                            foreach (($ar['data']['data'] ?? $ar['data'] ?? []) as $a) $areaCache[$zId][intval($a['area_id'] ?? 0)] = $a['area_name'] ?? '';
+                        } catch (\Throwable $e) { $areaCache[$zId] = []; }
+                    }
+                    $aName = $areaCache[$zId][$aId] ?? '';
+                }
+
+                // Update order with resolved names
+                $upd = [];
+                if ($cName !== '') $upd['delivery_city_name'] = $cName;
+                if ($zName !== '') $upd['delivery_zone_name'] = $zName;
+                if ($aName !== '') $upd['delivery_area_name'] = $aName;
+                if (!empty($upd)) {
+                    $db->update('orders', $upd, 'id = ?', [$row['id']]);
+                    $resolved++;
+                }
+            }
+
+            $remaining = $db->fetch("SELECT COUNT(*) as cnt FROM orders WHERE pathao_city_id IS NOT NULL AND pathao_city_id > 0 AND (delivery_city_name IS NULL OR delivery_city_name = '')")['cnt'] ?? 0;
+            // Update last run timestamp when all done
+            if (intval($remaining) === 0) {
+                try {
+                    $exists = $db->fetch("SELECT id FROM site_settings WHERE setting_key = 'area_backfill_last_run'");
+                    if ($exists) { $db->update('site_settings', ['setting_value' => date('Y-m-d H:i:s')], 'setting_key = ?', ['area_backfill_last_run']); }
+                    else { $db->insert('site_settings', ['setting_key' => 'area_backfill_last_run', 'setting_value' => date('Y-m-d H:i:s'), 'setting_type' => 'text', 'setting_group' => 'courier', 'label' => 'Area Backfill Last Run']); }
+                } catch (\Throwable $e) {}
+            }
+            echo json_encode(['success' => true, 'resolved' => $resolved, 'remaining' => intval($remaining), 'message' => "Resolved {$resolved} orders" . ($remaining > 0 ? ", {$remaining} remaining" : '')]);
             break;
 
         default:

@@ -73,7 +73,7 @@ class SteadfastAPI {
                 if (empty($o['note'])) $o['note'] = $defaultNote;
             }
         }
-        return $this->http('POST', '/create_order/bulk-order', $orders);
+        return $this->http('POST', '/create_order/bulk-order', ['orders' => $orders]);
     }
 
     // ── Status Checking ──
@@ -170,7 +170,7 @@ class SteadfastAPI {
                     'order_id'         => $orderId,
                     'courier_provider' => 'steadfast',
                     'consignment_id'   => $cid,
-                    'tracking_code'    => $trackingCode,
+                    'tracking_id'      => $trackingCode,
                     'status'           => 'uploaded',
                     'response_data'    => json_encode($resp),
                 ]);
@@ -282,7 +282,7 @@ class SteadfastAPI {
                         'updated_at'             => date('Y-m-d H:i:s'),
                     ], 'id = ?', [$oid]);
                     
-                    try { $this->db->insert('courier_uploads', ['order_id'=>$oid,'courier_provider'=>'steadfast','consignment_id'=>$cid,'tracking_code'=>$trackingCode,'status'=>'uploaded','response_data'=>json_encode($item)]); } catch (\Throwable $e) {}
+                    try { $this->db->insert('courier_uploads', ['order_id'=>$oid,'courier_provider'=>'steadfast','consignment_id'=>$cid,'tracking_id'=>$trackingCode,'status'=>'uploaded','response_data'=>json_encode($item)]); } catch (\Throwable $e) {}
                     try { $this->db->insert('order_status_history', ['order_id'=>$oid,'status'=>'shipped','note'=>"Bulk uploaded to Steadfast. CID: {$cid}"]); } catch (\Throwable $e) {}
                     
                     $results['success']++;
@@ -312,14 +312,15 @@ class SteadfastAPI {
             $resp = $this->getStatusByCid($cid);
         }
         
-        if (empty($resp['delivery_status'])) {
+        $deliveryStatus = $resp['delivery_status'] ?? $resp['data']['delivery_status'] ?? null;
+        if (empty($deliveryStatus)) {
             return ['success' => false, 'message' => 'No status returned', 'raw' => $resp];
         }
         
-        $courierStatus = $resp['delivery_status'];
-        $trackingMessage = $resp['tracking_message'] ?? '';
-        $deliveryCharge = $resp['delivery_charge'] ?? null;
-        $codAmount = $resp['cod_amount'] ?? null;
+        $courierStatus = $deliveryStatus;
+        $trackingMessage = $resp['tracking_message'] ?? $resp['data']['tracking_message'] ?? '';
+        $deliveryCharge = $resp['delivery_charge'] ?? $resp['data']['delivery_charge'] ?? null;
+        $codAmount = $resp['cod_amount'] ?? $resp['data']['cod_amount'] ?? null;
         
         // Map Steadfast status to our status
         $statusMap = [
@@ -399,7 +400,7 @@ class SteadfastAPI {
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 30,
             CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYPEER => false,
         ]);
         if ($method === 'POST') {
             curl_setopt($ch, CURLOPT_POST, true);

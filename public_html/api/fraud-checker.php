@@ -388,12 +388,42 @@ function _steadfastWebScrape($phone) {
     if (preg_match('/<meta[^>]+name=["\']csrf-token["\'][^>]+content=["\']([^"\']+)["\']/', $fp, $m)) $csrf2=$m[1];
     $tk = $csrf2 ?: $csrf;
 
-    // Try AJAX GET
-    $ch = curl_init('https://steadfast.com.bd/user/frauds/check/'.urlencode($phone));
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>10,CURLOPT_COOKIEJAR=>$cf,CURLOPT_COOKIEFILE=>$cf,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_SSL_VERIFYPEER=>false,CURLOPT_ENCODING=>'',
-        CURLOPT_HTTPHEADER=>array_merge($bh,['Accept: application/json, */*; q=0.01','X-Requested-With: XMLHttpRequest','X-CSRF-TOKEN: '.$tk,'Referer: https://steadfast.com.bd/user/frauds/check','Sec-Fetch-Dest: empty','Sec-Fetch-Mode: cors','Sec-Fetch-Site: same-origin']),
-    ]);
-    $resp = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    // Extract XSRF token from cookie jar (often required, otherwise 403)
+    $xsrf = '';
+    try {
+        if (is_file($cf)) {
+            $cookieTxt = file_get_contents($cf);
+            if ($cookieTxt && preg_match('/\tXSRF-TOKEN\t([^\n\r]+)/', $cookieTxt, $m)) {
+                $xsrf = urldecode(trim($m[1]));
+            }
+        }
+    } catch(\Throwable $e) {}
+
+    // Try AJAX GET (some accounts accept different phone formats)
+    $phoneVars = array_values(array_unique([
+        $phone,
+        ltrim($phone,'0'),
+        '88'.ltrim($phone,'0'),
+    ]));
+
+    $resp = null; $code = 0;
+    foreach ($phoneVars as $pv) {
+        $hdr = array_merge($bh,[
+            'Accept: application/json, */*; q=0.01',
+            'X-Requested-With: XMLHttpRequest',
+            'X-CSRF-TOKEN: '.$tk,
+            'Referer: https://steadfast.com.bd/user/frauds/check',
+            'Sec-Fetch-Dest: empty','Sec-Fetch-Mode: cors','Sec-Fetch-Site: same-origin'
+        ]);
+        if ($xsrf) $hdr[] = 'X-XSRF-TOKEN: '.$xsrf;
+
+        $ch = curl_init('https://steadfast.com.bd/user/frauds/check/'.urlencode($pv));
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>10,CURLOPT_COOKIEJAR=>$cf,CURLOPT_COOKIEFILE=>$cf,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_SSL_VERIFYPEER=>false,CURLOPT_ENCODING=>'',
+            CURLOPT_HTTPHEADER=>$hdr,
+        ]);
+        $resp = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        if ($code===200 && $resp) break;
+    }
 
     if ($code===200 && $resp) {
         $data = json_decode($resp, true);
@@ -405,9 +435,12 @@ function _steadfastWebScrape($phone) {
     }
 
     // Try POST
+    $hdr2 = array_merge($bh,['Accept: application/json, */*; q=0.01','Content-Type: application/x-www-form-urlencoded','X-Requested-With: XMLHttpRequest','X-CSRF-TOKEN: '.$tk,'Referer: https://steadfast.com.bd/user/frauds/check','Sec-Fetch-Dest: empty','Sec-Fetch-Mode: cors','Sec-Fetch-Site: same-origin']);
+    if ($xsrf) $hdr2[] = 'X-XSRF-TOKEN: '.$xsrf;
+
     $ch = curl_init('https://steadfast.com.bd/user/frauds/check');
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true,CURLOPT_POST=>true,CURLOPT_TIMEOUT=>10,CURLOPT_COOKIEJAR=>$cf,CURLOPT_COOKIEFILE=>$cf,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_SSL_VERIFYPEER=>false,CURLOPT_ENCODING=>'',
-        CURLOPT_HTTPHEADER=>array_merge($bh,['Accept: application/json, */*; q=0.01','Content-Type: application/x-www-form-urlencoded','X-Requested-With: XMLHttpRequest','X-CSRF-TOKEN: '.$tk,'Referer: https://steadfast.com.bd/user/frauds/check','Sec-Fetch-Dest: empty','Sec-Fetch-Mode: cors','Sec-Fetch-Site: same-origin']),
+        CURLOPT_HTTPHEADER=>$hdr2,
         CURLOPT_POSTFIELDS=>http_build_query(['_token'=>$tk,'phone'=>$phone]),
     ]);
     $resp = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);

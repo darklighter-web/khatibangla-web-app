@@ -233,7 +233,7 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-800 mb-1.5">Delivery Method</label>
-                    <select name="delivery_method" class="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none">
+                    <select name="delivery_method" id="deliveryMethodSelect" onchange="updateUploadBtn()" class="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none">
                         <?php foreach(['Pathao Courier','Steadfast','CarryBee','RedX','SA Paribahan','Sundarban','Self Delivery','Store Pickup'] as $dm): ?>
                         <option value="<?= $dm ?>" <?= ($order['shipping_method']??$order['courier_name']??'')===$dm?'selected':'' ?>><?= $dm ?></option>
                         <?php endforeach; ?>
@@ -294,13 +294,26 @@ require_once __DIR__ . '/../includes/header.php';
         <div class="bg-white border border-gray-200 rounded-lg p-4">
             <div class="flex items-center gap-2 mb-2">
                 <p class="text-xs text-blue-600 flex-1">📍 এড্রেস নিচের এই Filed গুলো অটোমেটিক ফিল হবে, যদি না হয় তাহলে সিলেক্ট করে নিন</p>
-                <button type="button" onclick="autoDetectLocation()" class="p-1 text-gray-400 hover:text-blue-600"><i class="fas fa-sync-alt text-xs"></i></button>
-                <button type="button" onclick="document.getElementById('pCityId').value='';document.getElementById('pZoneId').innerHTML='<option>Select Zone</option>';document.getElementById('pAreaId').innerHTML='<option>Select Area</option>'" class="p-1 text-gray-400 hover:text-red-500"><i class="fas fa-trash text-xs"></i></button>
+                <button type="button" onclick="autoDetectLocation()" class="p-1 text-gray-400 hover:text-blue-600" title="Auto-detect"><i class="fas fa-sync-alt text-xs"></i></button>
+                <button type="button" onclick="clearAreaSelection()" class="p-1 text-gray-400 hover:text-red-500" title="Clear"><i class="fas fa-trash text-xs"></i></button>
             </div>
             <div class="grid grid-cols-3 gap-4">
-                <div><label class="block text-xs font-semibold text-gray-700 mb-1">City</label><select id="pCityId" onchange="loadZones(this.value)" class="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"><option value="">Select City</option></select></div>
-                <div><label class="block text-xs font-semibold text-gray-700 mb-1">Zone</label><select id="pZoneId" onchange="loadAreas(this.value)" class="w-full px-3 py-2 border border-gray-200 rounded-md text-sm" disabled><option value="">Select Zone</option></select></div>
-                <div><label class="block text-xs font-semibold text-gray-700 mb-1">Area</label><select id="pAreaId" class="w-full px-3 py-2 border border-gray-200 rounded-md text-sm" disabled><option value="">Select Area</option></select></div>
+                <div><label class="block text-xs font-semibold text-gray-700 mb-1">City</label><select id="pCityId" onchange="loadZones(this.value);saveOrderLocation()" class="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"><option value="">Select City</option></select></div>
+                <div><label class="block text-xs font-semibold text-gray-700 mb-1">Zone</label><select id="pZoneId" onchange="loadAreas(this.value);saveOrderLocation()" class="w-full px-3 py-2 border border-gray-200 rounded-md text-sm" disabled><option value="">Select Zone</option></select></div>
+                <div><label class="block text-xs font-semibold text-gray-700 mb-1">Area</label><select id="pAreaId" onchange="saveOrderLocation()" class="w-full px-3 py-2 border border-gray-200 rounded-md text-sm" disabled><option value="">Select Area</option></select></div>
+            </div>
+            <?php
+            $storedCityName = $order['delivery_city_name'] ?? '';
+            $storedZoneName = $order['delivery_zone_name'] ?? '';
+            $storedAreaName = $order['delivery_area_name'] ?? '';
+            $hasStoredNames = ($storedCityName !== '' || $storedZoneName !== '' || $storedAreaName !== '');
+            ?>
+            <div id="areaPathLabel" class="mt-2 text-xs <?= $hasStoredNames ? '' : 'hidden' ?>">
+                <span class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-green-50 border border-green-200 text-green-700 font-medium" id="areaPathText">
+                    <?php if ($hasStoredNames): ?>
+                    ✅ <?= e($storedCityName) ?><?= $storedZoneName ? ' → '.e($storedZoneName) : '' ?><?= $storedAreaName ? ' → '.e($storedAreaName) : '' ?> <span class="text-green-400 text-[10px] ml-1">(saved)</span>
+                    <?php endif; ?>
+                </span>
             </div>
             <div id="autoDetectResult" class="mt-2 text-xs hidden"></div>
         </div>
@@ -347,7 +360,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <span class="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">✓ Uploaded</span>
                     <button type="button" onclick="courierSync(<?= $order['id'] ?>)" id="syncBtn" class="text-xs px-2 py-1 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition">🔄 Sync</button>
                     <?php elseif ($__canUpload): ?>
-                    <button type="button" onclick="uploadToCourier(<?= $order['id'] ?>)" id="sfUploadBtn" class="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium">🚀 Upload to Steadfast</button>
+                    <button type="button" onclick="uploadToCourier(<?= $order['id'] ?>)" id="sfUploadBtn" class="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium">🚀 Upload to <?= e($order['shipping_method'] ?? $order['courier_name'] ?? 'Courier') ?></button>
                     <?php endif; ?>
                 </div>
             </div>
@@ -422,7 +435,7 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
             
             <?php elseif ($__canUpload): ?>
-            <p class="text-xs text-gray-500">Order ready to upload. Select delivery method above, then click "Upload to Steadfast".</p>
+            <p class="text-xs text-gray-500">Order ready to upload. Select delivery method above, then click the upload button.</p>
             
             <?php else: ?>
             <p class="text-xs text-gray-400">Courier tracking will appear here after upload.</p>
@@ -752,7 +765,56 @@ function removeTag(t){fetch('<?=adminUrl("api/actions.php")?>',{method:'POST',he
 async function loadPathaCities(){try{const j=await(await fetch(PAPI+'?action=get_cities')).json();(j.data?.data||j.data||[]).forEach(c=>{const o=document.createElement('option');o.value=c.city_id;o.textContent=c.city_name;document.getElementById('pCityId').appendChild(o);});}catch(e){}}
 async function loadZones(cid){const s=document.getElementById('pZoneId');s.innerHTML='<option>Loading...</option>';s.disabled=true;document.getElementById('pAreaId').innerHTML='<option>Select Area</option>';document.getElementById('pAreaId').disabled=true;if(!cid)return;try{const j=await(await fetch(PAPI+'?action=get_zones&city_id='+cid)).json();s.innerHTML='<option value="">Select Zone</option>';(j.data?.data||j.data||[]).forEach(z=>{const o=document.createElement('option');o.value=z.zone_id;o.textContent=z.zone_name;s.appendChild(o);});s.disabled=false;}catch(e){}}
 async function loadAreas(zid){const s=document.getElementById('pAreaId');s.innerHTML='<option>Loading...</option>';s.disabled=true;if(!zid)return;try{const j=await(await fetch(PAPI+'?action=get_areas&zone_id='+zid)).json();s.innerHTML='<option value="">Select Area</option>';(j.data?.data||j.data||[]).forEach(a=>{const o=document.createElement('option');o.value=a.area_id;o.textContent=a.area_name;s.appendChild(o);});s.disabled=false;}catch(e){}}
+function saveOrderLocation(){
+    var cs=document.getElementById('pCityId'), zs=document.getElementById('pZoneId'), as2=document.getElementById('pAreaId');
+    var cid=cs?.value||0, zid=zs?.value||0, aid=as2?.value||0;
+    var cname=cs?.selectedOptions[0]?.textContent||'', zname=zs?.selectedOptions[0]?.textContent||'', aname=as2?.selectedOptions[0]?.textContent||'';
+    if(cname==='Select City')cname=''; if(zname==='Select Zone'||zname==='Loading...')zname=''; if(aname==='Select Area'||aname==='Loading...')aname='';
+    if(!cid&&!zid&&!aid)return;
+    // Update area path label
+    updateAreaPathLabel(cname.trim(), zname.trim(), aname.trim());
+    // Save to server
+    fetch(PAPI,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_order_location',order_id:<?= intval($order['id']) ?>,city_id:cid,zone_id:zid,area_id:aid,city_name:cname.trim(),zone_name:zname.trim(),area_name:aname.trim()})})
+    .then(function(r){return r.json()}).then(function(d){
+        if(d.success){var lbl=document.getElementById('areaPathLabel');if(lbl&&!lbl.classList.contains('hidden')){var sp=document.getElementById('areaPathText');if(sp)sp.innerHTML=sp.innerHTML.replace('(saving...)','(saved ✓)');}}
+    }).catch(function(){});
+}
+function updateAreaPathLabel(city, zone, area){
+    var lbl=document.getElementById('areaPathLabel'), sp=document.getElementById('areaPathText');
+    if(!lbl||!sp)return;
+    if(!city&&!zone&&!area){lbl.classList.add('hidden');return;}
+    var path='✅ '+city;
+    if(zone)path+=' → '+zone;
+    if(area)path+=' → '+area;
+    path+=' <span class="text-green-400 text-[10px] ml-1">(saving...)</span>';
+    sp.innerHTML=path;
+    lbl.classList.remove('hidden');
+}
+function clearAreaSelection(){
+    document.getElementById('pCityId').value='';
+    document.getElementById('pZoneId').innerHTML='<option>Select Zone</option>';
+    document.getElementById('pZoneId').disabled=true;
+    document.getElementById('pAreaId').innerHTML='<option>Select Area</option>';
+    document.getElementById('pAreaId').disabled=true;
+    var lbl=document.getElementById('areaPathLabel');if(lbl)lbl.classList.add('hidden');
+    // Clear on server too
+    fetch(PAPI,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_order_location',order_id:<?= intval($order['id']) ?>,city_id:0,zone_id:0,area_id:0,city_name:'',zone_name:'',area_name:''})}).catch(function(){});
+}
 loadPathaCities();
+<?php
+// Pre-select stored area values
+$storedCity = intval($order['pathao_city_id'] ?? 0);
+$storedZone = intval($order['pathao_zone_id'] ?? 0);
+$storedArea = intval($order['pathao_area_id'] ?? 0);
+if ($storedCity): ?>
+setTimeout(async function(){
+    var cs=document.getElementById('pCityId');
+    if(cs){cs.value='<?= $storedCity ?>';if(cs.value==='<?= $storedCity ?>'){await loadZones('<?= $storedCity ?>');
+    <?php if ($storedZone): ?>var zs=document.getElementById('pZoneId');if(zs){zs.value='<?= $storedZone ?>';await loadAreas('<?= $storedZone ?>');
+    <?php if ($storedArea): ?>var as2=document.getElementById('pAreaId');if(as2)as2.value='<?= $storedArea ?>';<?php endif; ?>}<?php endif; ?>
+    }}
+}, 600);
+<?php endif; ?>
 
 async function autoDetectLocation(){
     const addr='<?=addslashes($order['customer_address']??'')?>'.toLowerCase(),res=document.getElementById('autoDetectResult');
@@ -767,6 +829,7 @@ async function autoDetectLocation(){
             const zj=await(await fetch(PAPI+'?action=get_zones&city_id='+mc.city_id)).json(),mz=(zj.data?.data||zj.data||[]).find(z=>addr.includes(z.zone_name.toLowerCase()));
             if(mz){document.getElementById('pZoneId').value=mz.zone_id;await loadAreas(mz.zone_id);}
             res.className='mt-2 text-xs bg-green-50 text-green-700 p-2 rounded';res.textContent='✅ '+mc.city_name+(mz?' → '+mz.zone_name:' — select zone manually');
+            saveOrderLocation();
         }else{res.className='mt-2 text-xs bg-orange-50 text-orange-700 p-2 rounded';res.textContent='⚠ Could not detect.';}
     }catch(e){res.className='mt-2 text-xs bg-red-50 text-red-700 p-2 rounded';res.textContent=e.message;}
 }
@@ -778,15 +841,78 @@ calcTotals();
 var COURIER_API = '<?= SITE_URL ?>/api/steadfast-actions.php';
 var PATHAO_API  = '<?= SITE_URL ?>/api/pathao-api.php';
 
-function uploadToCourier(orderId) {
-    if (!confirm('Upload this order to Steadfast?')) return;
+function getSelectedCourier(){
+    var sel = document.getElementById('deliveryMethodSelect');
+    return sel ? sel.value.toLowerCase() : '<?= strtolower($order['shipping_method'] ?? '') ?>';
+}
+function updateUploadBtn(){
     var btn = document.getElementById('sfUploadBtn');
+    if(!btn) return;
+    var sel = document.getElementById('deliveryMethodSelect');
+    var name = sel ? sel.value : 'Courier';
+    var lc = name.toLowerCase();
+    if(lc.indexOf('pathao')!==-1||lc.indexOf('steadfast')!==-1){
+        btn.textContent = '🚀 Upload to ' + name;
+        btn.disabled = false;
+        btn.className = 'text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium';
+    } else {
+        btn.textContent = '🚀 Upload to ' + name;
+        btn.className = 'text-xs px-3 py-1.5 bg-gray-400 text-white rounded-lg cursor-not-allowed font-medium';
+    }
+}
+function uploadToCourier(orderId) {
+    var courier = getSelectedCourier();
+    var btn = document.getElementById('sfUploadBtn');
+
+    // Route to correct courier
+    if (courier.indexOf('pathao') !== -1) {
+        uploadToPathao(orderId, btn);
+    } else if (courier.indexOf('steadfast') !== -1) {
+        uploadToSteadfast(orderId, btn);
+    } else {
+        alert('⚠ Upload not supported for "' + (document.querySelector('select[name="delivery_method"]')?.value || courier) + '". Only Pathao and Steadfast have API upload.');
+    }
+}
+
+function uploadToSteadfast(orderId, btn) {
+    if (!confirm('Upload this order to Steadfast?')) return;
     if(btn){btn.disabled=true;btn.textContent='⏳ Uploading...';}
     fetch(COURIER_API, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'upload_order', order_id:orderId})})
     .then(function(r){return r.json()}).then(function(d) {
         if (d.success) { location.reload(); }
         else { alert('❌ ' + (d.message || d.error || 'Upload failed')); if(btn){btn.disabled=false;btn.textContent='🚀 Upload to Steadfast';} }
     }).catch(function(e) { alert('Error: ' + e.message); if(btn){btn.disabled=false;btn.textContent='🚀 Upload to Steadfast';} });
+}
+
+function uploadToPathao(orderId, btn) {
+    var cs=document.getElementById('pCityId'), zs=document.getElementById('pZoneId'), as2=document.getElementById('pAreaId');
+    var cityId = cs?.value || 0;
+    var zoneId = zs?.value || 0;
+    var areaId = as2?.value || 0;
+    if (!cityId || !zoneId) {
+        alert('⚠ Please select City and Zone before uploading to Pathao.');
+        return;
+    }
+    var cityName = cs?.selectedOptions[0]?.textContent?.trim() || '';
+    var zoneName = zs?.selectedOptions[0]?.textContent?.trim() || '';
+    var areaName = as2?.selectedOptions[0]?.textContent?.trim() || '';
+    if(cityName==='Select City')cityName=''; if(zoneName==='Select Zone')zoneName=''; if(areaName==='Select Area')areaName='';
+    if (!confirm('Upload this order to Pathao Courier?')) return;
+    if(btn){btn.disabled=true;btn.textContent='⏳ Uploading to Pathao...';}
+    fetch(PATHAO_API, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+        action:'upload_pathao_order',
+        order_id: orderId,
+        recipient_city: parseInt(cityId),
+        recipient_zone: parseInt(zoneId),
+        recipient_area: parseInt(areaId) || 0,
+        city_name: cityName,
+        zone_name: zoneName,
+        area_name: areaName
+    })})
+    .then(function(r){return r.json()}).then(function(d) {
+        if (d.success) { location.reload(); }
+        else { alert('❌ ' + (d.message || 'Pathao upload failed')); if(btn){btn.disabled=false;btn.textContent='🚀 Upload to Pathao';} }
+    }).catch(function(e) { alert('Error: ' + e.message); if(btn){btn.disabled=false;btn.textContent='🚀 Upload to Pathao';} });
 }
 
 function courierSync(orderId) {

@@ -269,7 +269,7 @@ function handleSteadfast($db, $payload) {
     
     $consignmentId = $payload['consignment_id'] ?? '';
     $invoice = $payload['invoice'] ?? '';
-    $courierStatus = $payload['status'] ?? '';
+    $courierStatus = $payload['status'] ?? $payload['delivery_status'] ?? '';
     $trackingMessage = $payload['tracking_message'] ?? '';
     
     if (empty($consignmentId) && empty($invoice)) return 'No identifier';

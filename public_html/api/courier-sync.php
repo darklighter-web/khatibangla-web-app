@@ -51,6 +51,7 @@ $orders = $db->fetchAll(
      FROM orders 
      WHERE order_status IN ({$activeStatuses}) 
        AND (courier_tracking_id IS NOT NULL AND courier_tracking_id != '' 
+            OR courier_consignment_id IS NOT NULL AND courier_consignment_id != ''
             OR pathao_consignment_id IS NOT NULL AND pathao_consignment_id != '')
      ORDER BY updated_at ASC 
      LIMIT {$limit}"
@@ -95,7 +96,7 @@ foreach ($orders as $order) {
         } elseif (strpos($courierName, 'steadfast') !== false && $steadfast && $steadfast->isConfigured()) {
             // Poll Steadfast API
             $resp = $steadfast->getStatusByCid($consignmentId);
-            $courierStatus = $resp['delivery_status'] ?? null;
+            $courierStatus = $resp['delivery_status'] ?? $resp['data']['delivery_status'] ?? null;
             if ($courierStatus) {
                 $newStatus = $steadfastMap[$courierStatus] ?? null;
             }
@@ -167,5 +168,108 @@ try {
     $line = date('Y-m-d H:i:s') . " SYNC: total={$results['total']} updated={$results['updated']} errors={$results['errors']} skipped={$results['skipped']}\n";
     @file_put_contents($dir . '/courier-sync.log', $line, FILE_APPEND | LOCK_EX);
 } catch (\Throwable $e) {}
+
+/* ═══════════════════════════════════════════════════
+   AUTO-BACKFILL: Resolve Pathao area names every 24h
+   ═══════════════════════════════════════════════════ */
+$results['backfill'] = null;
+try {
+    $backfillEnabled = getSetting('area_backfill_enabled', '0');
+    if ($backfillEnabled === '1') {
+        $lastRun = getSetting('area_backfill_last_run', '');
+        $shouldRun = true;
+        if ($lastRun) {
+            $elapsed = time() - strtotime($lastRun);
+            if ($elapsed < 86400) $shouldRun = false; // 24 hours
+        }
+
+        if ($shouldRun) {
+            // Ensure name columns exist
+            foreach (['delivery_city_name VARCHAR(100) DEFAULT NULL', 'delivery_zone_name VARCHAR(100) DEFAULT NULL', 'delivery_area_name VARCHAR(100) DEFAULT NULL'] as $colDef) {
+                try { $db->query("ALTER TABLE orders ADD COLUMN {$colDef}"); } catch (\Throwable $e) {}
+            }
+
+            // Count how many need backfill
+            $pending = intval($db->fetch("SELECT COUNT(*) as cnt FROM orders WHERE pathao_city_id IS NOT NULL AND pathao_city_id > 0 AND (delivery_city_name IS NULL OR delivery_city_name = '')")['cnt'] ?? 0);
+
+            if ($pending > 0 && $pathao) {
+                // Fetch Pathao city list once
+                $citiesResp = $pathao->getCities();
+                $cityList = $citiesResp['data']['data'] ?? $citiesResp['data'] ?? [];
+                $cityMap = [];
+                foreach ($cityList as $c) $cityMap[intval($c['city_id'] ?? 0)] = $c['city_name'] ?? '';
+
+                $zoneCache = [];
+                $areaCache = [];
+                $resolved = 0;
+                $maxBatch = 100; // Process up to 100 per cron run
+
+                $rows = $db->fetchAll("SELECT id, pathao_city_id, pathao_zone_id, pathao_area_id FROM orders WHERE pathao_city_id IS NOT NULL AND pathao_city_id > 0 AND (delivery_city_name IS NULL OR delivery_city_name = '') ORDER BY id DESC LIMIT {$maxBatch}");
+
+                foreach ($rows as $row) {
+                    $cId = intval($row['pathao_city_id'] ?? 0);
+                    $zId = intval($row['pathao_zone_id'] ?? 0);
+                    $aId = intval($row['pathao_area_id'] ?? 0);
+                    $cName = $cityMap[$cId] ?? '';
+                    $zName = '';
+                    $aName = '';
+
+                    if ($zId && $cId) {
+                        if (!isset($zoneCache[$cId])) {
+                            try {
+                                $zr = $pathao->getZones($cId);
+                                $zoneCache[$cId] = [];
+                                foreach (($zr['data']['data'] ?? $zr['data'] ?? []) as $z) $zoneCache[$cId][intval($z['zone_id'] ?? 0)] = $z['zone_name'] ?? '';
+                            } catch (\Throwable $e) { $zoneCache[$cId] = []; }
+                        }
+                        $zName = $zoneCache[$cId][$zId] ?? '';
+                    }
+
+                    if ($aId && $zId) {
+                        if (!isset($areaCache[$zId])) {
+                            try {
+                                $ar = $pathao->getAreas($zId);
+                                $areaCache[$zId] = [];
+                                foreach (($ar['data']['data'] ?? $ar['data'] ?? []) as $a) $areaCache[$zId][intval($a['area_id'] ?? 0)] = $a['area_name'] ?? '';
+                            } catch (\Throwable $e) { $areaCache[$zId] = []; }
+                        }
+                        $aName = $areaCache[$zId][$aId] ?? '';
+                    }
+
+                    $upd = [];
+                    if ($cName !== '') $upd['delivery_city_name'] = $cName;
+                    if ($zName !== '') $upd['delivery_zone_name'] = $zName;
+                    if ($aName !== '') $upd['delivery_area_name'] = $aName;
+                    if (!empty($upd)) {
+                        $db->update('orders', $upd, 'id = ?', [$row['id']]);
+                        $resolved++;
+                    }
+                    usleep(50000); // 50ms throttle
+                }
+
+                $remaining = $pending - $resolved;
+                $results['backfill'] = ['resolved' => $resolved, 'remaining' => max(0, $remaining)];
+
+                // Log it
+                try {
+                    $line = date('Y-m-d H:i:s') . " BACKFILL: resolved={$resolved} remaining={$remaining}\n";
+                    @file_put_contents($dir . '/courier-sync.log', $line, FILE_APPEND | LOCK_EX);
+                } catch (\Throwable $e) {}
+            } else {
+                $results['backfill'] = ['resolved' => 0, 'remaining' => 0, 'note' => $pending == 0 ? 'all_done' : 'pathao_not_loaded'];
+            }
+
+            // Update last run timestamp
+            $exists = $db->fetch("SELECT id FROM site_settings WHERE setting_key = 'area_backfill_last_run'");
+            if ($exists) { $db->update('site_settings', ['setting_value' => date('Y-m-d H:i:s')], 'setting_key = ?', ['area_backfill_last_run']); }
+            else { $db->insert('site_settings', ['setting_key' => 'area_backfill_last_run', 'setting_value' => date('Y-m-d H:i:s'), 'setting_type' => 'text', 'setting_group' => 'courier', 'label' => 'Area Backfill Last Run']); }
+        } else {
+            $hoursLeft = round((86400 - (time() - strtotime($lastRun))) / 3600, 1);
+            $results['backfill'] = ['skipped' => true, 'next_run_in_hours' => $hoursLeft];
+        }
+    }
+} catch (\Throwable $e) {
+    $results['backfill'] = ['error' => $e->getMessage()];
+}
 
 echo json_encode($results);

@@ -20,7 +20,11 @@ if (empty($_SESSION['admin_id'])) {
 }
 
 $db = Database::getInstance();
+
+// Normalize phone to Bangladeshi local format: 01XXXXXXXXX
 $phone = preg_replace('/[^0-9]/', '', $_GET['phone'] ?? '');
+if (substr($phone, 0, 2) === '88') $phone = substr($phone, 2);
+if (strlen($phone) === 10 && ($phone[0] ?? '') !== '0') $phone = '0' . $phone;
 
 if (strlen($phone) < 10) {
     echo json_encode(['error' => 'Invalid phone number']);
@@ -132,7 +136,15 @@ function processOrders($orders, $api, $type, $db) {
                         $resp = $api->getOrderDetails($cid);
                         $apiStatus = $resp['data']['order_status'] ?? $resp['order_status'] ?? null;
                     } else {
-                        $resp = $api->getStatusByCid($cid);
+                        // Steadfast: consignment_id is numeric, tracking_code is alphanumeric.
+                        // Use the correct endpoint based on the identifier we have.
+                        if (ctype_digit((string)$cid)) {
+                            $resp = $api->getStatusByCid($cid);
+                        } else {
+                            // fallback: treat as tracking code
+                            if (method_exists($api, 'getStatusByTrackingCode')) $resp = $api->getStatusByTrackingCode($cid);
+                            else $resp = $api->getStatusByCid($cid);
+                        }
                         $apiStatus = $resp['delivery_status'] ?? null;
                     }
                     $stats['api_checked']++;
@@ -169,7 +181,8 @@ if ($fraudData['pathao']) {
     $apiSuccess = intval($fraudData['pathao']['successful_delivery'] ?? 0);
     $apiCancel  = $apiTotal - $apiSuccess;
     $result['Pathao']['fraud_api'] = $fraudData['pathao'];
-    if ($apiTotal > $result['Pathao']['total']) {
+    $canOverride = (($fraudData['pathao']['show_count'] ?? true) === true) && intval($fraudData['pathao']['total_delivery'] ?? 0) > 0;
+    if ($canOverride && $apiTotal > $result['Pathao']['total']) {
         $result['Pathao']['total']     = $apiTotal;
         $result['Pathao']['success']   = $apiSuccess;
         $result['Pathao']['cancelled'] = $apiCancel;

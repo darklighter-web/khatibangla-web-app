@@ -200,6 +200,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
         }
     } catch (\Throwable $e) {}
 
+    // ── Auto-split if variation split mode is enabled ──
+    try {
+        if (isVariationSplitMode() && $id) {
+            ensureVariationSplitColumns();
+            $hasVariations = intval($db->fetch(
+                "SELECT COUNT(*) as cnt FROM product_variants WHERE product_id = ? AND option_type = 'variation' AND is_active = 1",
+                [$id]
+            )['cnt'] ?? 0);
+            if ($hasVariations > 0) {
+                // Re-merge first (cleans up old splits), then split fresh
+                mergeProductVariations($id);
+                splitProductVariations($id);
+            }
+        }
+    } catch (\Throwable $e) {}
+
     redirect(adminUrl('pages/products.php?msg=saved'));
 }
 
@@ -240,6 +256,35 @@ require_once __DIR__ . '/../includes/header.php';
     <h3 class="text-xl font-bold text-gray-800"><?= $pageTitle ?></h3>
     <?php if ($product): ?><a href="<?= url('product/' . $product['slug']) ?>" target="_blank" class="text-blue-500 text-sm hover:underline ml-2">↗ View</a><?php endif; ?>
 </div>
+
+<?php
+// ── Split product notices ──
+if ($product) {
+    try { ensureVariationSplitColumns(); } catch (\Throwable $e) {}
+    $__isChild = !empty($product['parent_product_id']);
+    $__childCount = 0;
+    if (!$__isChild) {
+        $__childCount = intval($db->fetch("SELECT COUNT(*) as cnt FROM products WHERE parent_product_id = ?", [$id])['cnt'] ?? 0);
+    }
+    if ($__isChild): ?>
+    <div class="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 mb-4 text-sm flex items-center gap-3">
+        <span class="text-2xl">📦</span>
+        <div>
+            <p class="text-indigo-800 font-medium">This is a split variation product <span class="bg-indigo-200 px-2 py-0.5 rounded text-xs"><?= e($product['variant_label'] ?? '') ?></span></p>
+            <p class="text-indigo-600 text-xs mt-0.5">Parent product: #<?= intval($product['parent_product_id']) ?> · Changes here only affect this variation. To edit all variations, edit the parent product and re-save.</p>
+        </div>
+    </div>
+    <?php elseif ($__childCount > 0): ?>
+    <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 text-sm flex items-center gap-3">
+        <span class="text-2xl">🔗</span>
+        <div>
+            <p class="text-amber-800 font-medium">This product has been split into <?= $__childCount ?> separate variation products</p>
+            <p class="text-amber-600 text-xs mt-0.5">This parent is currently hidden from the shop. Saving will re-split all variations with updated data. Switch to "Grouped" mode in <a href="<?= adminUrl('pages/settings.php?tab=checkout') ?>" class="underline font-medium">Settings → Checkout</a> to merge back.</p>
+        </div>
+    </div>
+    <?php endif;
+}
+?>
 
 <form method="POST" enctype="multipart/form-data" id="productForm">
 <div class="grid lg:grid-cols-3 gap-6">

@@ -56,6 +56,7 @@ $footerPages = Database::getInstance()->fetchAll("SELECT title, slug FROM pages 
                     <li><a href="<?= url('page/' . $pg['slug']) ?>" class="hover:opacity-100 hover:underline transition"><?= htmlspecialchars($pg['title']) ?></a></li>
                     <?php endforeach; ?>
                     <li><a href="<?= url('track-order') ?>" class="hover:opacity-100 hover:underline transition">Track My Order</a></li>
+                    <li><a href="<?= url('blog') ?>" class="hover:opacity-100 hover:underline transition">Blog</a></li>
                 </ul>
             </div>
             

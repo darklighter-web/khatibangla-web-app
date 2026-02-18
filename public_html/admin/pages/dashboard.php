@@ -336,10 +336,66 @@ try {
     </div>
 </div>
 
-<!-- Order Area Analytics -->
+<!-- Order Area Analytics — Visual Dashboard -->
 <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
-    <div class="flex items-center justify-between mb-4"><h3 class="text-sm font-semibold text-gray-700">📊 Top Order Areas (Last 90 Days)</h3><a href="<?= adminUrl('pages/courier.php?tab=area_map') ?>" class="text-sm text-blue-600 hover:underline">View Full Analytics →</a></div>
-    <div id="dashAreaStats" class="text-sm text-gray-400">Loading area data...</div>
+    <div class="flex items-center justify-between mb-5">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center"><span class="text-white text-sm">📊</span></div>
+            <div>
+                <h3 class="text-sm font-bold text-gray-800">Delivery Area Analytics</h3>
+                <p class="text-[11px] text-gray-400" id="areaSubtitle">Loading...</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <select id="dashAreaDays" onchange="loadDashAreaAnalytics()" class="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 bg-gray-50 focus:ring-1 focus:ring-indigo-300">
+                <option value="30">30 days</option>
+                <option value="90" selected>90 days</option>
+                <option value="180">180 days</option>
+                <option value="365">1 year</option>
+            </select>
+            <a href="<?= adminUrl('pages/courier.php?tab=area_map') ?>" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap">Full Report →</a>
+        </div>
+    </div>
+
+    <!-- Summary Stat Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5" id="areaSummaryCards">
+        <div class="bg-gray-50 rounded-lg p-3 animate-pulse"><div class="h-4 bg-gray-200 rounded w-16 mb-2"></div><div class="h-6 bg-gray-200 rounded w-10"></div></div>
+        <div class="bg-gray-50 rounded-lg p-3 animate-pulse"><div class="h-4 bg-gray-200 rounded w-16 mb-2"></div><div class="h-6 bg-gray-200 rounded w-10"></div></div>
+        <div class="bg-gray-50 rounded-lg p-3 animate-pulse"><div class="h-4 bg-gray-200 rounded w-16 mb-2"></div><div class="h-6 bg-gray-200 rounded w-10"></div></div>
+        <div class="bg-gray-50 rounded-lg p-3 animate-pulse"><div class="h-4 bg-gray-200 rounded w-16 mb-2"></div><div class="h-6 bg-gray-200 rounded w-10"></div></div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid md:grid-cols-5 gap-5 mb-5">
+        <!-- Doughnut Chart: Order Distribution -->
+        <div class="md:col-span-2 flex flex-col items-center">
+            <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-3">Order Distribution</p>
+            <div class="relative" style="width:200px;height:200px;">
+                <canvas id="areaDoughnutChart"></canvas>
+                <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span class="text-2xl font-bold text-gray-800" id="doughnutCenter">-</span>
+                    <span class="text-[10px] text-gray-400">total orders</span>
+                </div>
+            </div>
+        </div>
+        <!-- Horizontal Bar Chart: Success Rate by Area -->
+        <div class="md:col-span-3">
+            <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-3">Success Rate by Area</p>
+            <div style="height:220px;">
+                <canvas id="areaBarChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Area Detail List -->
+    <div id="dashAreaList" class="text-sm text-gray-400">
+        <div class="grid md:grid-cols-2 gap-x-6 gap-y-1">
+            <div class="animate-pulse py-2"><div class="h-3 bg-gray-100 rounded w-full"></div></div>
+            <div class="animate-pulse py-2"><div class="h-3 bg-gray-100 rounded w-full"></div></div>
+            <div class="animate-pulse py-2"><div class="h-3 bg-gray-100 rounded w-3/4"></div></div>
+            <div class="animate-pulse py-2"><div class="h-3 bg-gray-100 rounded w-3/4"></div></div>
+        </div>
+    </div>
 </div>
 
 <!-- Recent Orders -->
@@ -373,7 +429,172 @@ new Chart(document.getElementById('salesChart'), {
         {label:'Orders',data:chartData.map(d=>d.orders),type:'line',borderColor:'rgb(16,185,129)',borderWidth:2,fill:false,yAxisID:'y1',tension:0.4,pointRadius:4}
     ]}, options:{responsive:true,interaction:{intersect:false,mode:'index'},plugins:{legend:{display:true,position:'bottom'}},scales:{y:{beginAtZero:true,title:{display:true,text:'Revenue'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'Orders'}}}}
 });
-(async function(){try{const res=await fetch('<?= SITE_URL ?>/api/pathao-api.php?action=area_stats&days=90');const json=await res.json();const el=document.getElementById('dashAreaStats');if(json.data&&json.data.length>0){const mx=Math.max(...json.data.map(d=>parseInt(d.total_orders)));el.innerHTML='<div class="grid md:grid-cols-2 gap-x-6 gap-y-2">'+json.data.slice(0,10).map(a=>{const pct=Math.round((a.total_orders/mx)*100);const sp=a.total_orders>0?Math.round((a.delivered/a.total_orders)*100):0;return`<div class="flex items-center gap-3 py-1.5"><span class="w-28 text-sm text-gray-700 font-medium truncate">${a.area_name}</span><div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden"><div class="h-full rounded-full ${sp>=70?'bg-green-500':sp>=40?'bg-yellow-500':'bg-red-400'}" style="width:${pct}%"></div></div><span class="text-xs text-gray-500 w-8 text-right">${a.total_orders}</span><span class="text-xs font-medium w-10 text-right ${sp>=70?'text-green-600':sp>=40?'text-yellow-600':'text-red-600'}">${sp}%</span></div>`}).join('')+'</div>'}else{el.innerHTML='<p class="text-gray-400 text-center py-4">No area data yet</p>'}}catch(e){document.getElementById('dashAreaStats').innerHTML='<p class="text-gray-400 text-center py-4">Area analytics unavailable</p>'}})();
+let _doughnutChart = null, _barChart = null;
+const _areaColors = ['#6366f1','#8b5cf6','#a78bfa','#c4b5fd','#818cf8','#7c3aed','#4f46e5','#6d28d9','#5b21b6','#4338ca','#a5b4fc','#c7d2fe','#ddd6fe','#ede9fe','#e0e7ff'];
+
+async function loadDashAreaAnalytics(){
+    const days = document.getElementById('dashAreaDays')?.value || 90;
+    try {
+        const res = await fetch('<?= SITE_URL ?>/api/pathao-api.php?action=area_stats&days='+days);
+        const json = await res.json();
+        const data = json.data || [];
+
+        // Subtitle
+        document.getElementById('areaSubtitle').textContent = data.length > 0
+            ? data.length + ' areas · Last ' + days + ' days'
+            : 'No area data available';
+
+        if (!data.length) {
+            document.getElementById('areaSummaryCards').innerHTML = '<div class="col-span-4 text-center py-6 text-gray-400">No area data yet. Select delivery areas in order pages to populate analytics.</div>';
+            document.getElementById('dashAreaList').innerHTML = '';
+            if (_doughnutChart) { _doughnutChart.destroy(); _doughnutChart = null; }
+            if (_barChart) { _barChart.destroy(); _barChart = null; }
+            return;
+        }
+
+        // Calculate summary stats
+        const totalOrders = data.reduce((s,a) => s + parseInt(a.total_orders), 0);
+        const totalDelivered = data.reduce((s,a) => s + parseInt(a.delivered), 0);
+        const totalFailed = data.reduce((s,a) => s + parseInt(a.failed), 0);
+        const totalRevenue = data.reduce((s,a) => s + parseFloat(a.revenue||0), 0);
+        const overallSuccess = totalOrders > 0 ? Math.round((totalDelivered/totalOrders)*100) : 0;
+
+        // Best & worst area (min 2 orders)
+        const qualified = data.filter(a => parseInt(a.total_orders) >= 2);
+        let bestArea = '-', worstArea = '-', bestRate = 0, worstRate = 100;
+        qualified.forEach(a => {
+            const rate = parseInt(a.total_orders) > 0 ? (parseInt(a.delivered)/parseInt(a.total_orders))*100 : 0;
+            if (rate >= bestRate) { bestRate = rate; bestArea = a.area_name; }
+            if (rate <= worstRate) { worstRate = rate; worstArea = a.area_name; }
+        });
+
+        // Summary cards
+        document.getElementById('areaSummaryCards').innerHTML = `
+            <div class="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
+                <p class="text-[10px] font-semibold text-indigo-400 uppercase tracking-wider">Total Orders</p>
+                <p class="text-xl font-bold text-indigo-700 mt-0.5">${totalOrders.toLocaleString()}</p>
+                <p class="text-[10px] text-indigo-400 mt-0.5">৳${Number(totalRevenue).toLocaleString('en',{maximumFractionDigits:0})} revenue</p>
+            </div>
+            <div class="bg-green-50 rounded-lg p-3 border border-green-100">
+                <p class="text-[10px] font-semibold text-green-500 uppercase tracking-wider">Success Rate</p>
+                <p class="text-xl font-bold text-green-700 mt-0.5">${overallSuccess}%</p>
+                <p class="text-[10px] text-green-400 mt-0.5">${totalDelivered.toLocaleString()} delivered</p>
+            </div>
+            <div class="bg-emerald-50 rounded-lg p-3 border border-emerald-100">
+                <p class="text-[10px] font-semibold text-emerald-500 uppercase tracking-wider">Best Area</p>
+                <p class="text-sm font-bold text-emerald-700 mt-0.5 truncate" title="${bestArea}">${bestArea}</p>
+                <p class="text-[10px] text-emerald-400 mt-0.5">${Math.round(bestRate)}% success</p>
+            </div>
+            <div class="bg-red-50 rounded-lg p-3 border border-red-100">
+                <p class="text-[10px] font-semibold text-red-400 uppercase tracking-wider">Highest Risk</p>
+                <p class="text-sm font-bold text-red-700 mt-0.5 truncate" title="${worstArea}">${worstArea}</p>
+                <p class="text-[10px] text-red-400 mt-0.5">${Math.round(worstRate)}% success</p>
+            </div>
+        `;
+
+        // ── Doughnut Chart ──
+        const top8 = data.slice(0, 8);
+        const otherOrders = data.slice(8).reduce((s,a) => s + parseInt(a.total_orders), 0);
+        const dLabels = top8.map(a => a.area_name);
+        const dData = top8.map(a => parseInt(a.total_orders));
+        if (otherOrders > 0) { dLabels.push('Others'); dData.push(otherOrders); }
+
+        document.getElementById('doughnutCenter').textContent = totalOrders.toLocaleString();
+
+        if (_doughnutChart) _doughnutChart.destroy();
+        _doughnutChart = new Chart(document.getElementById('areaDoughnutChart'), {
+            type: 'doughnut',
+            data: {
+                labels: dLabels,
+                datasets: [{
+                    data: dData,
+                    backgroundColor: _areaColors.slice(0, dLabels.length),
+                    borderWidth: 2,
+                    borderColor: '#fff',
+                    hoverOffset: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                cutout: '62%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                const pct = totalOrders > 0 ? Math.round((ctx.parsed / totalOrders) * 100) : 0;
+                                return ctx.label + ': ' + ctx.parsed + ' orders (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // ── Horizontal Bar Chart: Success vs Fail ──
+        const barTop = data.slice(0, 10);
+        const barLabels = barTop.map(a => a.area_name.length > 16 ? a.area_name.slice(0,14)+'…' : a.area_name);
+        const barDelivered = barTop.map(a => parseInt(a.delivered));
+        const barFailed = barTop.map(a => parseInt(a.failed));
+        const barPending = barTop.map(a => parseInt(a.total_orders) - parseInt(a.delivered) - parseInt(a.failed));
+
+        if (_barChart) _barChart.destroy();
+        _barChart = new Chart(document.getElementById('areaBarChart'), {
+            type: 'bar',
+            data: {
+                labels: barLabels,
+                datasets: [
+                    { label: 'Delivered', data: barDelivered, backgroundColor: 'rgba(34,197,94,0.75)', borderRadius: 3 },
+                    { label: 'In Transit', data: barPending, backgroundColor: 'rgba(234,179,8,0.5)', borderRadius: 3 },
+                    { label: 'Failed', data: barFailed, backgroundColor: 'rgba(239,68,68,0.65)', borderRadius: 3 }
+                ]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'top', labels: { boxWidth: 10, padding: 12, font: { size: 10 } } },
+                    tooltip: { mode: 'index' }
+                },
+                scales: {
+                    x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
+                    y: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 }, autoSkip: false } }
+                }
+            }
+        });
+
+        // ── Area Detail List (below charts) ──
+        const mx = Math.max(...data.map(d => parseInt(d.total_orders)));
+        document.getElementById('dashAreaList').innerHTML = `
+            <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-3">All Areas</p>
+            <div class="grid md:grid-cols-2 gap-x-6 gap-y-1">${data.slice(0,12).map((a,i) => {
+                const pct = Math.round((parseInt(a.total_orders)/mx)*100);
+                const sp = parseInt(a.total_orders)>0 ? Math.round((parseInt(a.delivered)/parseInt(a.total_orders))*100) : 0;
+                const fp = parseInt(a.total_orders)>0 ? Math.round((parseInt(a.failed)/parseInt(a.total_orders))*100) : 0;
+                const clr = sp>=70 ? 'green' : sp>=40 ? 'yellow' : 'red';
+                return `<div class="flex items-center gap-2 py-1.5 group hover:bg-gray-50 rounded-md px-1 transition">
+                    <span class="w-5 text-[10px] text-gray-300 font-mono">${i+1}</span>
+                    <span class="w-28 text-xs text-gray-700 font-medium truncate" title="${a.area_name}">${a.area_name}</span>
+                    <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden flex">
+                        <div class="h-full bg-green-500 rounded-l-full" style="width:${sp*pct/100}%"></div>
+                        <div class="h-full bg-red-400" style="width:${fp*pct/100}%"></div>
+                    </div>
+                    <span class="text-[10px] text-gray-500 w-8 text-right font-medium">${a.total_orders}</span>
+                    <span class="text-[10px] font-bold w-9 text-right text-${clr}-600">${sp}%</span>
+                    <span class="text-[10px] text-gray-400 w-16 text-right hidden group-hover:inline">৳${Number(a.revenue||0).toLocaleString('en',{maximumFractionDigits:0})}</span>
+                </div>`;
+            }).join('')}</div>
+        `;
+
+    } catch(e) {
+        console.error('Area analytics error:', e);
+        document.getElementById('areaSummaryCards').innerHTML = '<div class="col-span-4 text-center py-4 text-gray-400">Area analytics unavailable</div>';
+        document.getElementById('dashAreaList').innerHTML = '';
+    }
+}
+loadDashAreaAnalytics();
 </script>
 
 <?php else: ?>

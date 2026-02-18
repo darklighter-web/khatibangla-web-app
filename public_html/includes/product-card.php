@@ -42,6 +42,13 @@ $_productName = htmlspecialchars($product['name_bn'] ?: $product['name']);
         <span class="pc-badge card-badge">-<?= $discount ?>%</span>
         <?php endif; ?>
         
+        <?php
+        // Show variant label badge for split products
+        $__variantLabel = $product['variant_label'] ?? null;
+        if ($__variantLabel): ?>
+        <span class="pc-variant-badge"><?= htmlspecialchars($__variantLabel) ?></span>
+        <?php endif; ?>
+        
         <?php if ($_outOfStock): ?>
         <div class="pc-soldout"><span>স্টক শেষ</span></div>
         <?php endif; ?>
@@ -140,6 +147,22 @@ $_productName = htmlspecialchars($product['name_bn'] ?: $product['name']);
     border-radius: 6px;
     line-height: 1.4;
     z-index: 2;
+}
+
+/* Variant Label Badge (split products) */
+.pc-variant-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(79, 70, 229, 0.88);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+    line-height: 1.4;
+    z-index: 2;
+    backdrop-filter: blur(4px);
 }
 
 /* Sold Out */

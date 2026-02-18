@@ -62,7 +62,7 @@ if ($sfConnected) {
 // Steadfast stats
 $sfStats = ['total'=>0,'shipped'=>0,'delivered'=>0,'cancelled'=>0];
 try {
-    $ss = $db->fetch("SELECT COUNT(*) as total, SUM(CASE WHEN order_status='shipped' THEN 1 ELSE 0 END) as shipped, SUM(CASE WHEN order_status='delivered' THEN 1 ELSE 0 END) as delivered, SUM(CASE WHEN order_status IN ('cancelled','pending_cancel') THEN 1 ELSE 0 END) as cancelled FROM orders WHERE LOWER(courier_name) LIKE 'steadfast%'");
+    $ss = $db->fetch("SELECT COUNT(*) as total, SUM(CASE WHEN order_status='shipped' THEN 1 ELSE 0 END) as shipped, SUM(CASE WHEN order_status='delivered' THEN 1 ELSE 0 END) as delivered, SUM(CASE WHEN order_status IN ('cancelled','pending_cancel') THEN 1 ELSE 0 END) as cancelled FROM orders WHERE (LOWER(courier_name) LIKE 'steadfast%' OR LOWER(shipping_method) LIKE '%steadfast%')");
     if ($ss) $sfStats = $ss;
 } catch (\Throwable $e) {}
 $sfRate = intval($sfStats['total'])>0 ? round(intval($sfStats['delivered'])/intval($sfStats['total'])*100) : 0;
@@ -822,10 +822,54 @@ function togglePass(btn){var i=btn.previousElementSibling||btn.closest('.relativ
 <!-- ========================================= -->
 <div class="space-y-6">
     <div class="bg-white rounded-xl shadow-sm border p-6">
+        <?php
+        $backfillEnabled = getSetting('area_backfill_enabled', '0') === '1';
+        $backfillLastRun = getSetting('area_backfill_last_run', '');
+        $pendingBackfill = 0;
+        try { $pendingBackfill = intval($db->fetch("SELECT COUNT(*) as cnt FROM orders WHERE pathao_city_id IS NOT NULL AND pathao_city_id > 0 AND (delivery_city_name IS NULL OR delivery_city_name = '')")['cnt'] ?? 0); } catch (\Throwable $e) {}
+        ?>
+        <!-- Auto-Backfill Status Card -->
+        <div class="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4 mb-5" id="backfillCard">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center text-lg">🔄</div>
+                    <div>
+                        <h4 class="text-sm font-bold text-gray-800">Auto Backfill Area Names</h4>
+                        <p class="text-xs text-gray-500">Resolves Pathao City/Zone/Area names for orders every 24 hours via cron</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <!-- Status badges -->
+                    <div class="flex items-center gap-2 text-xs">
+                        <?php if ($pendingBackfill > 0): ?>
+                        <span class="px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-700 border border-yellow-200 font-medium" id="pendingBadge"><?= $pendingBackfill ?> pending</span>
+                        <?php else: ?>
+                        <span class="px-2.5 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 font-medium" id="pendingBadge">✓ All resolved</span>
+                        <?php endif; ?>
+                        <?php if ($backfillLastRun): ?>
+                        <span class="px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200" title="Last run: <?= e($backfillLastRun) ?>">Last: <?= date('M d, h:i A', strtotime($backfillLastRun)) ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <!-- Manual backfill button -->
+                    <button type="button" onclick="backfillAreaNames()" id="backfillBtn" class="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700 transition shadow-sm">🚀 Run Now</button>
+                    <!-- Toggle -->
+                    <label class="flex items-center gap-2 cursor-pointer select-none" title="Enable auto-backfill every 24 hours via cron sync">
+                        <div class="relative">
+                            <input type="checkbox" id="backfillToggle" onchange="toggleAutoBackfill(this.checked)" <?= $backfillEnabled ? 'checked' : '' ?> class="sr-only peer">
+                            <div class="w-10 h-5 bg-gray-300 rounded-full peer-checked:bg-indigo-600 transition-colors"></div>
+                            <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5 shadow"></div>
+                        </div>
+                        <span class="text-xs font-medium text-gray-700" id="toggleLabel"><?= $backfillEnabled ? 'Auto: ON' : 'Auto: OFF' ?></span>
+                    </label>
+                </div>
+            </div>
+            <div id="backfillResult" class="hidden mt-3 p-3 rounded-lg text-sm"></div>
+        </div>
+
         <div class="flex items-center justify-between mb-5">
             <div>
                 <h3 class="font-bold text-gray-800 text-lg">📊 Order Area Analytics</h3>
-                <p class="text-sm text-gray-500">See which areas most orders come from, with delivery success rates</p>
+                <p class="text-sm text-gray-500">Delivery area data from Pathao City → Zone → Area selection</p>
             </div>
             <select id="areaDays" onchange="loadAreaChart()" class="px-3 py-2 border rounded-lg text-sm">
                 <option value="30">Last 30 days</option>
@@ -836,6 +880,95 @@ function togglePass(btn){var i=btn.previousElementSibling||btn.closest('.relativ
         </div>
         <div id="areaChartContainer">
             <div class="text-center py-8 text-gray-400">Loading area data...</div>
+        </div>
+    </div>
+
+    <!-- Bangladesh Map Visualization -->
+    <div class="bg-white rounded-xl shadow-sm border p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h3 class="font-bold text-gray-800 text-lg">🗺️ Bangladesh Delivery Performance Map</h3>
+                <p class="text-sm text-gray-500">City-level success &amp; return rates — <span class="text-green-600 font-medium">green = better delivery</span>, <span class="text-red-500 font-medium">red = higher returns</span></p>
+            </div>
+            <div class="flex items-center gap-2">
+                <select id="mapDays" onchange="loadCityMapData()" class="px-2.5 py-1.5 border rounded-lg text-xs text-gray-600">
+                    <option value="30">30 days</option>
+                    <option value="90" selected>90 days</option>
+                    <option value="180">180 days</option>
+                    <option value="365">1 year</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="grid lg:grid-cols-4 gap-5">
+            <!-- Map SVG -->
+            <div class="lg:col-span-3 relative">
+                <div id="bdMapContainer" class="bg-gradient-to-br from-slate-50 to-gray-50 rounded-xl border border-gray-200 overflow-hidden relative select-none" style="height:380px;">
+                    <svg id="bdMapSvg" viewBox="0 0 600 780" preserveAspectRatio="xMidYMid meet" class="w-full h-full" style="cursor:grab;transform-origin:0 0;"></svg>
+                </div>
+                <!-- Zoom Controls -->
+                <div class="absolute top-3 right-3 flex flex-col gap-1 z-30">
+                    <button onclick="mapZoom(1.3)" class="w-8 h-8 bg-white border border-gray-300 rounded-lg shadow-sm flex items-center justify-center text-gray-600 hover:bg-gray-50 active:bg-gray-100 text-lg font-bold leading-none" title="Zoom in">+</button>
+                    <button onclick="mapZoom(0.77)" class="w-8 h-8 bg-white border border-gray-300 rounded-lg shadow-sm flex items-center justify-center text-gray-600 hover:bg-gray-50 active:bg-gray-100 text-lg font-bold leading-none" title="Zoom out">−</button>
+                    <button onclick="mapReset()" class="w-8 h-8 bg-white border border-gray-300 rounded-lg shadow-sm flex items-center justify-center text-gray-500 hover:bg-gray-50 active:bg-gray-100 text-xs" title="Reset view">⟲</button>
+                </div>
+                <!-- Zoom level indicator -->
+                <div id="mapZoomBadge" class="absolute bottom-3 left-3 px-2 py-1 bg-white/80 backdrop-blur border border-gray-200 rounded-md text-[10px] text-gray-500 z-30 pointer-events-none">100%</div>
+                <!-- Tooltip -->
+                <div id="mapTooltip" class="hidden absolute pointer-events-none z-50 bg-gray-900/95 backdrop-blur text-white text-xs rounded-xl shadow-2xl px-4 py-3 max-w-64" style="transition:opacity 0.15s;">
+                    <div id="ttName" class="font-bold text-sm mb-0.5"></div>
+                    <div id="ttDiv" class="text-gray-400 text-[10px] mb-2"></div>
+                    <div id="ttStats" class="space-y-1"></div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="space-y-4">
+                <!-- Color Legend -->
+                <div class="bg-gray-50 rounded-xl p-4 border">
+                    <p class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3">Delivery Performance</p>
+                    <div class="h-3.5 rounded-full overflow-hidden flex border border-gray-200" id="legendGradient">
+                        <div class="flex-1" style="background:#dc2626"></div>
+                        <div class="flex-1" style="background:#f97316"></div>
+                        <div class="flex-1" style="background:#eab308"></div>
+                        <div class="flex-1" style="background:#84cc16"></div>
+                        <div class="flex-1" style="background:#22c55e"></div>
+                        <div class="flex-1" style="background:#16a34a"></div>
+                    </div>
+                    <div class="flex justify-between mt-1.5">
+                        <span class="text-[9px] text-red-500 font-medium">High Returns</span>
+                        <span class="text-[9px] text-green-600 font-medium">High Success</span>
+                    </div>
+                    <div class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200">
+                        <div class="w-4 h-3 rounded border border-gray-300" style="background:repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9 2px,#e2e8f0 2px,#e2e8f0 4px)"></div>
+                        <span class="text-[10px] text-gray-400">No order data</span>
+                    </div>
+                </div>
+
+                <!-- City Rankings -->
+                <div class="bg-gray-50 rounded-xl p-4 border">
+                    <p class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3">City Rankings</p>
+                    <div id="cityRanking" class="space-y-2 text-xs">
+                        <p class="text-gray-400">Loading...</p>
+                    </div>
+                </div>
+
+                <!-- Hovered City Detail -->
+                <div class="bg-gray-50 rounded-xl p-4 border">
+                    <p class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">City Detail</p>
+                    <div id="selectedCityInfo" class="text-xs text-gray-400">
+                        <p>Hover over the map to see details</p>
+                    </div>
+                </div>
+
+                <!-- Map Stats Summary -->
+                <div class="bg-gray-50 rounded-xl p-4 border">
+                    <p class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3">Summary</p>
+                    <div id="mapSummary" class="space-y-2 text-xs">
+                        <p class="text-gray-400">Loading...</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1155,14 +1288,441 @@ async function loadAreaChart() {
                 <span class="text-xs text-gray-400 w-24 text-right">৳${Number(a.revenue||0).toLocaleString()}</span>
             </div>`;
         }).join('')}</div>`;
-    // Top & Worst areas
     const sorted=[...data].filter(a=>a.total_orders>=2);
     sorted.sort((a,b)=>{const sa=a.total_orders>0?(a.delivered/a.total_orders):0;const sb=b.total_orders>0?(b.delivered/b.total_orders):0;return sb-sa;});
     el('topAreas').innerHTML=sorted.slice(0,8).map(a=>{const s=Math.round((a.delivered/a.total_orders)*100);return `<div class="flex justify-between items-center"><span class="text-gray-700">${a.area_name}</span><div class="flex items-center gap-2"><span class="text-green-600 font-bold">${s}%</span><span class="text-xs text-gray-400">${a.total_orders} orders</span></div></div>`;}).join('');
     sorted.reverse();
     el('worstAreas').innerHTML=sorted.slice(0,8).map(a=>{const f=Math.round((a.failed/a.total_orders)*100);return `<div class="flex justify-between items-center"><span class="text-gray-700">${a.area_name}</span><div class="flex items-center gap-2"><span class="text-red-600 font-bold">${f}% fail</span><span class="text-xs text-gray-400">${a.total_orders} orders</span></div></div>`;}).join('');
 }
+
+/* ═══════════════════════════════════════════════
+   BANGLADESH DELIVERY PERFORMANCE MAP
+   City data → green (success) / red (returns)
+   ═══════════════════════════════════════════════ */
+const CITY_TO_DISTRICT={
+    "dhaka":"Dhaka","chittagong":"Chittagong","chattogram":"Chittagong","ctg":"Chittagong",
+    "barishal":"Barisal","barisal":"Barisal","cumilla":"Comilla","comilla":"Comilla",
+    "bogura":"Bogra","bogra":"Bogra","jashore":"Jessore","jessore":"Jessore",
+    "cox's bazar":"Cox's Bazar","coxs bazar":"Cox's Bazar","coxsbazar":"Cox's Bazar",
+    "b. baria":"Brahamanbaria","brahmanbaria":"Brahamanbaria",
+    "n.ganj":"Narayanganj","narayanganj":"Narayanganj",
+    "rajshahi":"Rajshahi","sylhet":"Sylhet","khulna":"Khulna","rangpur":"Rangpur",
+    "mymensingh":"Mymensingh","gazipur":"Gazipur","tangail":"Tangail","faridpur":"Faridpur",
+    "dinajpur":"Dinajpur","kishoreganj":"Kishoreganj","narsingdi":"Narsingdi","munshiganj":"Munshiganj",
+    "manikganj":"Manikganj","sirajganj":"Sirajganj","pabna":"Pabna","kushtia":"Kushtia",
+    "jhenaidah":"Jhenaidah","satkhira":"Satkhira","habiganj":"Habiganj","sunamganj":"Sunamganj",
+    "moulvibazar":"Maulvibazar","chandpur":"Chandpur","feni":"Feni","noakhali":"Noakhali",
+    "lakshmipur":"Lakshmipur","bhola":"Bhola","pirojpur":"Pirojpur","patuakhali":"Patuakhali",
+    "barguna":"Barguna","gopalganj":"Gopalganj","madaripur":"Madaripur","shariatpur":"Shariatpur",
+    "rajbari":"Rajbari","kurigram":"Kurigram","gaibandha":"Gaibandha","nilphamari":"Nilphamari",
+    "lalmonirhat":"Lalmonirhat","panchagarh":"Panchagarh","thakurgaon":"Thakurgaon",
+    "jamalpur":"Jamalpur","sherpur":"Sherpur","netrokona":"Netrakona","netrakona":"Netrakona",
+    "rangamati":"Rangamati","khagrachhari":"Khagrachhari","bandarban":"Bandarban",
+    "bagerhat":"Bagerhat","narail":"Narail","magura":"Magura","meherpur":"Meherpur",
+    "chuadanga":"Chuadanga","joypurhat":"Joypurhat","naogaon":"Naogaon","natore":"Natore","nawabganj":"Nawabganj"
+};
+let _bdGeo=null, _cityStats={};
+
+function cityToDistrict(cityName){
+    const lc=(cityName||'').toLowerCase().trim();
+    if(CITY_TO_DISTRICT[lc]) return CITY_TO_DISTRICT[lc];
+    if(_bdGeo) for(const f of _bdGeo.features){
+        const dn=f.properties.name.toLowerCase();
+        if(lc===dn||lc.includes(dn)||dn.includes(lc)) return f.properties.name;
+    }
+    return null;
+}
+
+// Success rate → color gradient: red (high returns) → yellow → green (high success)
+function successColor(rate){
+    if(rate>=85) return '#15803d'; // green-700
+    if(rate>=75) return '#16a34a'; // green-600
+    if(rate>=65) return '#22c55e'; // green-500
+    if(rate>=55) return '#84cc16'; // lime-500
+    if(rate>=45) return '#eab308'; // yellow-500
+    if(rate>=35) return '#f59e0b'; // amber-500
+    if(rate>=25) return '#f97316'; // orange-500
+    if(rate>=15) return '#ef4444'; // red-500
+    return '#dc2626'; // red-600
+}
+
+function projectPt(lon,lat){return[((lon-87.8)/(92.8-87.8))*600,(1-(lat-20.4)/(26.8-20.4))*780];}
+function geoPath(geo){
+    function r2d(r){if(!r||r.length<3)return'';let d='M';r.forEach((p,i)=>{const[x,y]=projectPt(p[0],p[1]);d+=(i?'L':'')+(x|0)+','+(y|0);});return d+'Z';}
+    let p='';
+    if(geo.type==='Polygon')geo.coordinates.forEach(r=>{p+=r2d(r);});
+    else if(geo.type==='MultiPolygon')geo.coordinates.forEach(pl=>pl.forEach(r=>{p+=r2d(r);}));
+    return p;
+}
+function geoCenter(geo){
+    let sx=0,sy=0,n=0;
+    function add(r){r.forEach(p=>{sx+=p[0];sy+=p[1];n++;});}
+    if(geo.type==='Polygon')geo.coordinates.forEach(add);
+    else if(geo.type==='MultiPolygon')geo.coordinates.forEach(p=>p.forEach(add));
+    return n?projectPt(sx/n,sy/n):[300,390];
+}
+
+async function initBdMap(){
+    try{
+        const resp=await fetch('<?= SITE_URL ?>/api/bd-map-data.json');
+        if(!resp.ok)throw new Error(resp.status);
+        _bdGeo=await resp.json();
+        loadCityMapData();
+    }catch(e){
+        console.error('Map load error:',e);
+        document.getElementById('bdMapContainer').innerHTML='<div class="flex flex-col items-center justify-center py-16 text-gray-400"><p class="text-3xl mb-2">🗺️</p><p class="text-sm font-medium">Map data not available</p><p class="text-xs mt-1">Place <code class="bg-gray-100 px-1 rounded">bd-map-data.json</code> in your /api/ folder</p></div>';
+    }
+}
+
+async function loadCityMapData(){
+    if(!_bdGeo)return;
+    const days=document.getElementById('mapDays')?.value||90;
+    try{
+        const resp=await fetch(PAPI+'?action=city_stats&days='+days);
+        const json=await resp.json();
+        const data=json.data||[];
+
+        _cityStats={};
+        let totalOrders=0,totalDelivered=0,totalFailed=0,totalRevenue=0,matched=0;
+
+        data.forEach(c=>{
+            const district=cityToDistrict(c.city_name);
+            if(!district)return;
+            matched++;
+            if(!_cityStats[district]) _cityStats[district]={city:c.city_name,orders:0,delivered:0,failed:0,revenue:0,success_rate:0,return_rate:0};
+            _cityStats[district].orders+=parseInt(c.total_orders)||0;
+            _cityStats[district].delivered+=parseInt(c.delivered)||0;
+            _cityStats[district].failed+=parseInt(c.failed)||0;
+            _cityStats[district].revenue+=parseFloat(c.revenue)||0;
+            totalOrders+=parseInt(c.total_orders)||0;
+            totalDelivered+=parseInt(c.delivered)||0;
+            totalFailed+=parseInt(c.failed)||0;
+            totalRevenue+=parseFloat(c.revenue)||0;
+        });
+        Object.values(_cityStats).forEach(s=>{
+            s.success_rate=s.orders>0?Math.round((s.delivered/s.orders)*100):0;
+            s.return_rate=s.orders>0?Math.round((s.failed/s.orders)*100):0;
+        });
+
+        renderCityMap();
+        renderCityRanking();
+        renderMapSummary(totalOrders,totalDelivered,totalFailed,totalRevenue,matched,data.length);
+    }catch(e){console.error('City stats error:',e);}
+}
+
+function renderCityMap(){
+    if(!_bdGeo)return;
+    const svg=document.getElementById('bdMapSvg');
+    const divPaths={};
+    let html='';
+
+    _bdGeo.features.forEach((feat,i)=>{
+        const name=feat.properties.name, div=feat.properties.division||'';
+        const d=geoPath(feat.geometry);
+        if(!d)return;
+        const s=_cityStats[name];
+        let fill='#f1f5f9', strokeClr='rgba(148,163,184,0.3)', strokeW='0.5';
+        if(s&&s.orders>0){
+            fill=successColor(s.success_rate);
+            strokeClr='rgba(255,255,255,0.6)';
+            strokeW='0.8';
+        }
+        html+=`<path d="${d}" fill="${fill}" stroke="${strokeClr}" stroke-width="${strokeW}" class="cursor-pointer transition-all duration-150" style="stroke-linejoin:round" data-district="${name}" data-division="${div}" onmouseenter="showCityTT(event,'${name.replace(/'/g,"\\'")}','${div}')" onmousemove="moveCityTT(event)" onmouseleave="hideCityTT()"/>`;
+        if(!divPaths[div])divPaths[div]='';
+        divPaths[div]+=d;
+    });
+
+    // Division borders
+    Object.values(divPaths).forEach(d=>{
+        html+=`<path d="${d}" fill="none" stroke="rgba(30,41,59,0.4)" stroke-width="1.8" style="pointer-events:none;stroke-linejoin:round"/>`;
+    });
+
+    // City labels on districts with order data
+    _bdGeo.features.forEach(feat=>{
+        const name=feat.properties.name, s=_cityStats[name];
+        if(!s||s.orders<1)return;
+        const[cx,cy]=geoCenter(feat.geometry);
+        const label=(s.city||name);
+        const short=label.length>12?label.slice(0,10)+'…':label;
+        const fs=s.orders>=20?'10':'8.5';
+        html+=`<text x="${cx}" y="${cy-4}" text-anchor="middle" style="font-size:${fs}px;font-weight:700;fill:#1e293b;pointer-events:none;text-shadow:0 0 3px rgba(255,255,255,0.95),0 1px 2px rgba(255,255,255,0.9)">${short}</text>`;
+        html+=`<text x="${cx}" y="${cy+8}" text-anchor="middle" style="font-size:7.5px;fill:#475569;pointer-events:none;text-shadow:0 0 3px rgba(255,255,255,0.9)">${s.orders} · ${s.success_rate}%✓ · ${s.return_rate}%✗</text>`;
+    });
+
+    svg.innerHTML=html;
+}
+
+function renderCityRanking(){
+    const box=document.getElementById('cityRanking');
+    const entries=Object.entries(_cityStats).filter(([k,v])=>v.orders>0).sort((a,b)=>b[1].orders-a[1].orders);
+    if(!entries.length){box.innerHTML='<p class="text-gray-400">No city data</p>';return;}
+    box.innerHTML=entries.slice(0,12).map(([dist,s])=>{
+        const clr=successColor(s.success_rate);
+        const name=s.city||dist;
+        return `<div class="flex items-center gap-2 py-1.5 cursor-pointer hover:bg-gray-100 rounded px-1 -mx-1 transition" onmouseenter="hlDistrict('${dist.replace(/'/g,"\\'")}')" onmouseleave="ulDistrict()">
+            <div class="w-3 h-3 rounded-sm flex-shrink-0 border border-white shadow-sm" style="background:${clr}"></div>
+            <span class="flex-1 text-gray-700 truncate font-medium" title="${name}">${name}</span>
+            <span class="text-gray-400 tabular-nums text-[10px]">${s.orders}</span>
+            <span class="font-bold tabular-nums w-10 text-right text-[11px]" style="color:${clr}">${s.success_rate}%</span>
+        </div>`;
+    }).join('');
+}
+
+function renderMapSummary(total,delivered,failed,revenue,matched,rawCount){
+    const box=document.getElementById('mapSummary');
+    const sr=total>0?Math.round((delivered/total)*100):0;
+    const rr=total>0?Math.round((failed/total)*100):0;
+    box.innerHTML=`
+        <div class="flex justify-between"><span class="text-gray-500">Total Orders</span><span class="font-bold text-gray-800">${total.toLocaleString()}</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Delivered</span><span class="font-bold text-green-600">${delivered.toLocaleString()} (${sr}%)</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Returned</span><span class="font-bold text-red-500">${failed.toLocaleString()} (${rr}%)</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Revenue</span><span class="font-bold text-indigo-600">৳${Number(revenue).toLocaleString('en',{maximumFractionDigits:0})}</span></div>
+        <div class="flex justify-between pt-2 mt-2 border-t border-gray-200"><span class="text-gray-400">Cities mapped</span><span class="text-gray-500">${matched}/${rawCount}</span></div>`;
+}
+
+function showCityTT(e,district,division){
+    const tt=document.getElementById('mapTooltip');
+    const s=_cityStats[district];
+    const name=s?.city||district;
+    document.getElementById('ttName').textContent=name;
+    document.getElementById('ttDiv').textContent='📍 '+division+' Division'+(s?.city&&s.city!==district?' · '+district:'');
+    if(s&&s.orders>0){
+        document.getElementById('ttStats').innerHTML=
+            `<div class="flex justify-between gap-6"><span class="text-gray-400">Orders</span><span class="font-bold">${s.orders}</span></div>`+
+            `<div class="flex justify-between gap-6"><span class="text-gray-400">Delivered</span><span class="text-green-400 font-medium">${s.delivered} (${s.success_rate}%)</span></div>`+
+            `<div class="flex justify-between gap-6"><span class="text-gray-400">Returned</span><span class="text-red-400 font-medium">${s.failed} (${s.return_rate}%)</span></div>`+
+            `<div class="flex justify-between gap-6"><span class="text-gray-400">Revenue</span><span>৳${Number(s.revenue).toLocaleString('en',{maximumFractionDigits:0})}</span></div>`+
+            `<div class="mt-1.5 h-2 rounded-full overflow-hidden bg-gray-700 flex"><div class="h-full" style="width:${s.success_rate}%;background:${successColor(s.success_rate)}"></div></div>`+
+            `<div class="flex justify-between mt-0.5"><span class="text-[9px] text-red-400">${s.return_rate}% returns</span><span class="text-[9px] text-green-400">${s.success_rate}% success</span></div>`;
+    }else{
+        document.getElementById('ttStats').innerHTML='<p class="text-gray-500">No orders from this city</p>';
+    }
+    const card=document.getElementById('selectedCityInfo');
+    if(s&&s.orders>0){
+        card.innerHTML=`
+            <p class="font-bold text-gray-800 text-sm">${name}</p>
+            <p class="text-gray-400 text-[10px] mb-2">${division} Division</p>
+            <div class="space-y-1.5">
+                <div class="flex justify-between"><span class="text-gray-500">Orders</span><span class="font-bold text-gray-800">${s.orders}</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">Success</span><span class="font-bold" style="color:${successColor(s.success_rate)}">${s.success_rate}%</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">Returns</span><span class="font-bold text-red-500">${s.return_rate}%</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">Revenue</span><span class="font-bold text-indigo-600">৳${Number(s.revenue).toLocaleString('en',{maximumFractionDigits:0})}</span></div>
+            </div>
+            <div class="mt-2.5 h-2.5 rounded-full overflow-hidden bg-gray-200 border border-gray-300">
+                <div class="h-full rounded-full transition-all" style="width:${s.success_rate}%;background:${successColor(s.success_rate)}"></div>
+            </div>
+            <div class="flex justify-between mt-1"><span class="text-[9px] text-red-400">Returns ${s.return_rate}%</span><span class="text-[9px] text-green-500">Success ${s.success_rate}%</span></div>`;
+    }else{
+        card.innerHTML=`<p class="font-medium text-gray-600">${district}</p><p class="text-gray-400 text-[10px]">${division} Division</p><p class="text-gray-400 text-[10px] mt-1">No orders yet</p>`;
+    }
+    tt.classList.remove('hidden');moveCityTT(e);
+}
+function moveCityTT(e){
+    const tt=document.getElementById('mapTooltip'),rect=document.getElementById('bdMapContainer').getBoundingClientRect();
+    let x=e.clientX-rect.left+14,y=e.clientY-rect.top-10;
+    if(x+260>rect.width)x=e.clientX-rect.left-270;
+    if(y<0)y=10;
+    tt.style.left=x+'px';tt.style.top=y+'px';
+}
+function hideCityTT(){document.getElementById('mapTooltip').classList.add('hidden');}
+function hlDistrict(name){document.querySelectorAll('#bdMapSvg path[data-district]').forEach(p=>{if(p.dataset.district===name){p.style.filter='brightness(0.8) drop-shadow(0 0 4px rgba(0,0,0,0.3))';p.style.strokeWidth='2';}else p.style.opacity='0.25';});}
+function ulDistrict(){document.querySelectorAll('#bdMapSvg path[data-district]').forEach(p=>{p.style.filter='';p.style.opacity='';p.style.strokeWidth='';});}
+
+initBdMap();
 loadAreaChart();
+
+/* ── Map Zoom & Pan (Google Maps style) ── */
+(function(){
+    const container=document.getElementById('bdMapContainer');
+    const svg=document.getElementById('bdMapSvg');
+    if(!container||!svg)return;
+
+    let scale=1, panX=0, panY=0;
+    let isDragging=false, startX=0, startY=0, startPanX=0, startPanY=0;
+    const MIN_SCALE=0.6, MAX_SCALE=6;
+
+    function applyTransform(){
+        svg.style.transform=`translate(${panX}px,${panY}px) scale(${scale})`;
+        const badge=document.getElementById('mapZoomBadge');
+        if(badge) badge.textContent=Math.round(scale*100)+'%';
+    }
+
+    // Scroll to zoom (centered on cursor)
+    container.addEventListener('wheel',function(e){
+        e.preventDefault();
+        const rect=container.getBoundingClientRect();
+        const mx=e.clientX-rect.left;
+        const my=e.clientY-rect.top;
+
+        const delta=e.deltaY>0?0.85:1.18;
+        const newScale=Math.min(MAX_SCALE,Math.max(MIN_SCALE,scale*delta));
+        const ratio=newScale/scale;
+
+        // Zoom toward cursor position
+        panX=mx-(mx-panX)*ratio;
+        panY=my-(my-panY)*ratio;
+        scale=newScale;
+        applyTransform();
+    },{passive:false});
+
+    // Drag to pan
+    container.addEventListener('mousedown',function(e){
+        if(e.button!==0)return;
+        isDragging=true;
+        startX=e.clientX; startY=e.clientY;
+        startPanX=panX; startPanY=panY;
+        svg.style.cursor='grabbing';
+        e.preventDefault();
+    });
+    window.addEventListener('mousemove',function(e){
+        if(!isDragging)return;
+        panX=startPanX+(e.clientX-startX);
+        panY=startPanY+(e.clientY-startY);
+        applyTransform();
+    });
+    window.addEventListener('mouseup',function(){
+        if(isDragging){isDragging=false;svg.style.cursor='grab';}
+    });
+
+    // Touch support (pinch zoom + drag)
+    let lastTouchDist=0, lastTouchCenter=null, touchStartPanX=0, touchStartPanY=0;
+    container.addEventListener('touchstart',function(e){
+        if(e.touches.length===1){
+            isDragging=true;
+            startX=e.touches[0].clientX; startY=e.touches[0].clientY;
+            startPanX=panX; startPanY=panY;
+        }else if(e.touches.length===2){
+            isDragging=false;
+            const dx=e.touches[0].clientX-e.touches[1].clientX;
+            const dy=e.touches[0].clientY-e.touches[1].clientY;
+            lastTouchDist=Math.sqrt(dx*dx+dy*dy);
+            lastTouchCenter={x:(e.touches[0].clientX+e.touches[1].clientX)/2,y:(e.touches[0].clientY+e.touches[1].clientY)/2};
+            touchStartPanX=panX; touchStartPanY=panY;
+        }
+        e.preventDefault();
+    },{passive:false});
+    container.addEventListener('touchmove',function(e){
+        if(e.touches.length===1&&isDragging){
+            panX=startPanX+(e.touches[0].clientX-startX);
+            panY=startPanY+(e.touches[0].clientY-startY);
+            applyTransform();
+        }else if(e.touches.length===2&&lastTouchDist>0){
+            const dx=e.touches[0].clientX-e.touches[1].clientX;
+            const dy=e.touches[0].clientY-e.touches[1].clientY;
+            const dist=Math.sqrt(dx*dx+dy*dy);
+            const ratio=dist/lastTouchDist;
+            const newScale=Math.min(MAX_SCALE,Math.max(MIN_SCALE,scale*ratio));
+
+            const rect=container.getBoundingClientRect();
+            const cx=lastTouchCenter.x-rect.left;
+            const cy=lastTouchCenter.y-rect.top;
+            const r2=newScale/scale;
+            panX=cx-(cx-panX)*r2;
+            panY=cy-(cy-panY)*r2;
+            scale=newScale;
+            lastTouchDist=dist;
+            applyTransform();
+        }
+        e.preventDefault();
+    },{passive:false});
+    container.addEventListener('touchend',function(){isDragging=false;lastTouchDist=0;});
+
+    // Double-click to zoom in
+    container.addEventListener('dblclick',function(e){
+        e.preventDefault();
+        const rect=container.getBoundingClientRect();
+        const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+        const newScale=Math.min(MAX_SCALE,scale*1.5);
+        const ratio=newScale/scale;
+        panX=mx-(mx-panX)*ratio;
+        panY=my-(my-panY)*ratio;
+        scale=newScale;
+        applyTransform();
+    });
+
+    // Expose global functions for buttons
+    window.mapZoom=function(factor){
+        const rect=container.getBoundingClientRect();
+        const cx=rect.width/2, cy=rect.height/2;
+        const newScale=Math.min(MAX_SCALE,Math.max(MIN_SCALE,scale*factor));
+        const ratio=newScale/scale;
+        panX=cx-(cx-panX)*ratio;
+        panY=cy-(cy-panY)*ratio;
+        scale=newScale;
+        applyTransform();
+    };
+    window.mapReset=function(){
+        scale=1; panX=0; panY=0;
+        applyTransform();
+    };
+})();
+
+async function backfillAreaNames(){
+    const btn=document.getElementById('backfillBtn');
+    const res=document.getElementById('backfillResult');
+    if(btn){btn.disabled=true;btn.textContent='⏳ Resolving...';}
+    res.classList.remove('hidden');
+    res.className='mt-3 p-3 rounded-lg text-sm bg-blue-50 text-blue-700 border border-blue-200';
+    res.textContent='Fetching Pathao area names for orders... this may take a moment.';
+    let totalResolved=0, calls=0;
+    try{
+        while(calls<10){
+            const j=await(await fetch(PAPI,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'backfill_area_names'})})).json();
+            if(!j.success){res.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700 border border-red-200';res.textContent='❌ '+j.message;break;}
+            totalResolved+=j.resolved||0;
+            calls++;
+            if((j.remaining||0)<=0){
+                res.className='mt-3 p-3 rounded-lg text-sm bg-green-50 text-green-700 border border-green-200';
+                res.textContent='✅ Done! Resolved '+totalResolved+' orders total. All area names are now populated.';
+                updatePendingBadge(0);
+                loadAreaChart();
+                break;
+            }else{
+                res.textContent='⏳ Resolved '+totalResolved+' orders so far, '+j.remaining+' remaining...';
+                updatePendingBadge(j.remaining);
+            }
+        }
+        if(calls>=10){res.textContent+=' (stopped after 10 batches — click again for more)';}
+    }catch(e){
+        res.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700 border border-red-200';
+        res.textContent='❌ Error: '+e.message;
+    }
+    if(btn){btn.disabled=false;btn.textContent='🚀 Run Now';}
+}
+
+function updatePendingBadge(count){
+    const badge=document.getElementById('pendingBadge');
+    if(!badge)return;
+    if(count>0){
+        badge.textContent=count+' pending';
+        badge.className='px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-700 border border-yellow-200 font-medium text-xs';
+    }else{
+        badge.textContent='✓ All resolved';
+        badge.className='px-2.5 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 font-medium text-xs';
+    }
+}
+
+async function toggleAutoBackfill(enabled){
+    const label=document.getElementById('toggleLabel');
+    if(label)label.textContent=enabled?'Auto: ON':'Auto: OFF';
+    try{
+        const j=await(await fetch(PAPI,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'toggle_area_backfill',enabled:enabled?1:0})})).json();
+        if(!j.success){alert('❌ '+(j.message||'Failed to save'));document.getElementById('backfillToggle').checked=!enabled;if(label)label.textContent=!enabled?'Auto: ON':'Auto: OFF';}
+    }catch(e){alert('Error: '+e.message);document.getElementById('backfillToggle').checked=!enabled;if(label)label.textContent=!enabled?'Auto: ON':'Auto: OFF';}
+}
+
+// Silent auto-trigger: if auto-backfill is enabled and there are pending orders, check via cron-compatible endpoint
+<?php if ($backfillEnabled && $pendingBackfill > 0):
+    $shouldAutoRun = true;
+    if ($backfillLastRun) { $shouldAutoRun = (time() - strtotime($backfillLastRun)) >= 86400; }
+    if ($shouldAutoRun): ?>
+(function(){
+    // Auto-backfill overdue — run silently in background
+    var res=document.getElementById('backfillResult');
+    if(res){res.classList.remove('hidden');res.className='mt-3 p-3 rounded-lg text-sm bg-blue-50 text-blue-700 border border-blue-200';res.textContent='⏳ Auto-backfill starting (24h overdue)...';}
+    setTimeout(function(){ backfillAreaNames(); }, 1500);
+})();
+<?php endif; endif; ?>
 <?php endif;?>
 </script>
 
