@@ -516,23 +516,8 @@ foreach ($variants as $v) $variantGroups[$v['variant_name']][] = $v;
         </div>
     </div>
     
-    <!-- Product Description -->
-    <div class="mt-10">
-        <div class="border-b mb-6">
-            <button class="tab-btn px-6 py-3 font-semibold text-sm border-b-2 border-red-500 text-red-600" data-tab="description">বিবরণ</button>
-            <button class="tab-btn px-6 py-3 font-semibold text-sm text-gray-500 hover:text-gray-700" data-tab="reviews">রিভিউ</button>
-        </div>
-        
-        <div id="tab-description" class="tab-content bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-            <div class="prose max-w-none">
-                <?= $product['description'] ?: '<p class="text-gray-500">কোনো বিবরণ যুক্ত করা হয়নি।</p>' ?>
-            </div>
-        </div>
-        
-        <div id="tab-reviews" class="tab-content hidden bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-            <p class="text-gray-500 text-center py-8">এখনো কোনো রিভিউ নেই।</p>
-        </div>
-    </div>
+    <!-- Product Description / Reviews / Q&A -->
+    <?php include ROOT_PATH . 'includes/product-reviews.php'; ?>
     
     <!-- Related Products -->
     <?php if ($spShowRelated && !empty($relatedProducts)): ?>
@@ -793,6 +778,12 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         document.getElementById('tab-' + btn.dataset.tab)?.classList.remove('hidden');
     });
 });
+// Auto-open tab from URL hash (e.g. #tab-reviews)
+if (window.location.hash) {
+    const hashTab = window.location.hash.replace('#tab-', '');
+    const tabBtn = document.querySelector(`.tab-btn[data-tab="${hashTab}"]`);
+    if (tabBtn) { tabBtn.click(); setTimeout(() => { tabBtn.scrollIntoView({behavior:'smooth',block:'center'}); if (hashTab === 'reviews' && typeof openReviewForm === 'function') setTimeout(openReviewForm, 500); }, 300); }
+}
 
 // Initialize variant price on page load
 document.addEventListener('DOMContentLoaded', () => {

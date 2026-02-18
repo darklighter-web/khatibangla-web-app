@@ -98,6 +98,20 @@ $creditBalanceTk = round($creditBalance * $creditRate, 2);
 $customer = getCustomer();
 $memberDays = max(1, floor((time() - strtotime($customer['created_at'])) / 86400));
 
+// Pending reviews count
+$pendingReviewCount = 0;
+try {
+    $__prCount = $db->fetch(
+        "SELECT COUNT(DISTINCT oi.product_id) as cnt FROM orders o 
+         JOIN order_items oi ON oi.order_id = o.id
+         WHERE (o.customer_id = ? OR o.customer_phone = ?)
+         AND o.order_status = 'delivered'
+         AND oi.product_id NOT IN (SELECT product_id FROM product_reviews WHERE customer_id = ? AND is_dummy = 0)",
+        [$custId, $custPhone, $custId]
+    );
+    $pendingReviewCount = intval($__prCount['cnt'] ?? 0);
+} catch (\Throwable $e) {}
+
 require_once __DIR__ . '/../includes/header.php';
 
 $statusBadges = [
@@ -141,11 +155,12 @@ $messages = ['updated'=>['প্রোফাইল আপডেট হয়ে�
 <!-- Tabs -->
 <div class="flex gap-1 mb-6 bg-gray-100/80 rounded-2xl p-1.5 overflow-x-auto" style="-webkit-overflow-scrolling:touch;scrollbar-width:none;">
 <?php
-$tabs = ['overview'=>['ড্যাশবোর্ড','fa-th-large'],'orders'=>['অর্ডার','fa-shopping-bag'],'returns'=>['রিটার্ন','fa-undo-alt'],'credits'=>['ক্রেডিট','fa-coins'],'wishlist'=>['উইশলিস্ট','fa-heart'],'addresses'=>['ঠিকানা','fa-map-marker-alt'],'profile'=>['প্রোফাইল','fa-user-cog']];
+$tabs = ['overview'=>['ড্যাশবোর্ড','fa-th-large'],'orders'=>['অর্ডার','fa-shopping-bag'],'reviews'=>['রিভিউ','fa-star'],'returns'=>['রিটার্ন','fa-undo-alt'],'credits'=>['ক্রেডিট','fa-coins'],'wishlist'=>['উইশলিস্ট','fa-heart'],'addresses'=>['ঠিকানা','fa-map-marker-alt'],'profile'=>['প্রোফাইল','fa-user-cog']];
 foreach ($tabs as $key => $t): ?>
 <a href="<?= url('account?tab=' . $key) ?>" class="px-4 py-2.5 text-sm font-medium rounded-xl whitespace-nowrap transition-all <?= $tab === $key ? 'bg-white shadow-sm text-gray-800 ring-1 ring-gray-200' : 'text-gray-500 hover:text-gray-700 hover:bg-white/50' ?>">
     <i class="fas <?= $t[1] ?> mr-1.5 text-xs"></i><?= $t[0] ?>
     <?php if ($key === 'orders' && $metrics['active_orders'] > 0) echo '<span class="ml-1 text-[10px] bg-red-500 text-white w-4 h-4 inline-flex items-center justify-center rounded-full">' . $metrics['active_orders'] . '</span>'; ?>
+    <?php if ($key === 'reviews' && $pendingReviewCount > 0) echo '<span class="ml-1 text-[10px] bg-yellow-500 text-white px-1.5 py-0.5 rounded-full">' . $pendingReviewCount . '</span>'; ?>
     <?php if ($key === 'returns' && $refundCount > 0) echo '<span class="ml-1 text-[10px] bg-orange-500 text-white px-1.5 py-0.5 rounded-full">' . $refundCount . '</span>'; ?>
 </a>
 <?php endforeach; ?>
@@ -380,6 +395,109 @@ if ($tab === 'overview'):
     </form>
 </div>
 <script>function editAddress(a){document.getElementById('addr_id').value=a.id;document.getElementById('addr_label').value=a.label;document.getElementById('addr_name').value=a.name;document.getElementById('addr_phone').value=a.phone;document.getElementById('addr_address').value=a.address;document.getElementById('addr_city').value=a.city;document.getElementById('addr_area').value=a.area||'';document.getElementById('addr-form-title').innerHTML='<i class="fas fa-pen text-blue-500 mr-1.5"></i>ঠিকানা এডিট';document.getElementById('address-form').scrollIntoView({behavior:'smooth'});}</script>
+
+<?php elseif ($tab === 'reviews'):
+    // Fetch products eligible for review
+    $reviewableProducts = [];
+    try {
+        $reviewableProducts = $db->fetchAll(
+            "SELECT DISTINCT p.id, p.name, p.name_bn, p.slug, p.featured_image, p.sale_price, p.regular_price
+             FROM orders o 
+             JOIN order_items oi ON oi.order_id = o.id
+             JOIN products p ON p.id = oi.product_id
+             WHERE (o.customer_id = ? OR o.customer_phone = ?)
+             AND o.order_status = 'delivered'
+             AND p.id NOT IN (SELECT product_id FROM product_reviews WHERE customer_id = ? AND is_dummy = 0)
+             ORDER BY o.updated_at DESC", [$custId, $custPhone, $custId]
+        );
+    } catch (\Throwable $e) {}
+    
+    // Fetch user's submitted reviews
+    $myReviews = [];
+    try {
+        $myReviews = $db->fetchAll(
+            "SELECT r.*, p.name as product_name, p.name_bn as product_name_bn, p.slug as product_slug, p.featured_image
+             FROM product_reviews r 
+             LEFT JOIN products p ON p.id = r.product_id
+             WHERE r.customer_id = ? AND r.is_dummy = 0
+             ORDER BY r.created_at DESC", [$custId]
+        );
+    } catch (\Throwable $e) {}
+    
+    $reviewCredit = intval(getSetting('review_credit_reward', '50'));
+?>
+
+<!-- Pending Reviews -->
+<?php if (!empty($reviewableProducts)): ?>
+<div class="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-2xl p-5 mb-6">
+    <div class="flex items-center gap-3 mb-3">
+        <div class="w-10 h-10 bg-yellow-100 rounded-xl flex items-center justify-center"><i class="fas fa-star text-yellow-500 text-lg"></i></div>
+        <div>
+            <h3 class="font-bold text-gray-800">রিভিউ দিন, ক্রেডিট পান!</h3>
+            <p class="text-xs text-gray-500"><?= count($reviewableProducts) ?>টি পণ্যে রিভিউ দেওয়া বাকি আছে <?php if ($reviewCredit > 0): ?>· প্রতিটি রিভিউতে <strong class="text-green-600"><?= $reviewCredit ?> ক্রেডিট</strong> পাবেন<?php endif; ?></p>
+        </div>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <?php foreach ($reviewableProducts as $rp): ?>
+        <a href="<?= url('product/' . $rp['slug']) ?>#tab-reviews" class="flex items-center gap-3 bg-white rounded-xl p-3 border border-yellow-100 hover:shadow-md hover:-translate-y-0.5 transition group">
+            <?php if ($rp['featured_image']): ?>
+            <img src="<?= imgSrc('products', $rp['featured_image']) ?>" class="w-14 h-14 object-cover rounded-lg border" alt="" loading="lazy">
+            <?php else: ?>
+            <div class="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center text-gray-300"><i class="fas fa-image"></i></div>
+            <?php endif; ?>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-gray-800 line-clamp-1 group-hover:text-blue-600"><?= e($rp['name_bn'] ?: $rp['name']) ?></p>
+                <p class="text-xs text-gray-400 mt-0.5">ক্লিক করে রিভিউ দিন</p>
+            </div>
+            <div class="shrink-0 text-yellow-500"><i class="fas fa-pen text-sm"></i></div>
+        </a>
+        <?php endforeach; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<!-- My Reviews -->
+<h3 class="font-bold text-gray-800 mb-3"><i class="fas fa-comment-dots text-blue-500 mr-1.5"></i>আমার রিভিউ</h3>
+<?php if (empty($myReviews)): ?>
+<div class="text-center py-12 bg-white rounded-2xl shadow-sm border">
+    <i class="far fa-comment-dots text-4xl text-gray-200 mb-3"></i>
+    <p class="text-gray-400 text-lg mb-1">আপনি এখনো কোনো রিভিউ দেননি</p>
+    <p class="text-sm text-gray-400">পণ্য ডেলিভারি পাওয়ার পর রিভিউ দিতে পারবেন</p>
+</div>
+<?php else: ?>
+<div class="space-y-3">
+<?php foreach ($myReviews as $mr): ?>
+<div class="bg-white rounded-2xl border shadow-sm p-4 hover:shadow-md transition">
+    <div class="flex items-start gap-3">
+        <?php if ($mr['featured_image']): ?>
+        <a href="<?= url('product/' . ($mr['product_slug'] ?? '')) ?>"><img src="<?= imgSrc('products', $mr['featured_image']) ?>" class="w-14 h-14 object-cover rounded-lg border" alt="" loading="lazy"></a>
+        <?php endif; ?>
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-2 mb-1">
+                <a href="<?= url('product/' . ($mr['product_slug'] ?? '')) ?>" class="text-sm font-semibold text-gray-800 hover:text-blue-600 line-clamp-1"><?= e($mr['product_name_bn'] ?: $mr['product_name'] ?? 'পণ্য') ?></a>
+                <?php if ($mr['is_approved']): ?>
+                <span class="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full whitespace-nowrap"><i class="fas fa-check mr-0.5"></i>প্রকাশিত</span>
+                <?php else: ?>
+                <span class="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full whitespace-nowrap"><i class="fas fa-clock mr-0.5"></i>অনুমোদন বাকি</span>
+                <?php endif; ?>
+            </div>
+            <div class="flex items-center gap-1 mb-1">
+                <?php for ($i=1; $i<=5; $i++): ?><span class="text-sm <?= $i <= $mr['rating'] ? 'text-yellow-400' : 'text-gray-300' ?>">★</span><?php endfor; ?>
+                <span class="text-[11px] text-gray-400 ml-1"><?= date('d M Y', strtotime($mr['created_at'])) ?></span>
+            </div>
+            <p class="text-sm text-gray-600 line-clamp-2"><?= e($mr['review_text']) ?></p>
+            <?php $imgs = json_decode($mr['images'] ?? '[]', true); if (!empty($imgs)): ?>
+            <div class="flex gap-1.5 mt-2"><?php foreach ($imgs as $img): ?><img src="<?= SITE_URL . $img ?>" class="w-10 h-10 object-cover rounded-md border"><?php endforeach; ?></div>
+            <?php endif; ?>
+            <?php if ($mr['credit_awarded']): ?>
+            <div class="mt-1.5 text-[11px] text-green-600"><i class="fas fa-coins mr-0.5"></i>ক্রেডিট পেয়েছেন</div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+<?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <?php elseif ($tab === 'profile'): ?>
 <div class="grid lg:grid-cols-2 gap-6">
