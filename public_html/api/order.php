@@ -68,6 +68,7 @@ try {
         'channel' => 'website',
         'coupon_code' => sanitize($_POST['coupon_code'] ?? ''),
         'store_credit_used' => floatval($_POST['store_credit_used'] ?? 0),
+        'progress_bar_discount' => floatval($_POST['progress_bar_discount'] ?? 0),
     ]);
 
     ob_end_clean();

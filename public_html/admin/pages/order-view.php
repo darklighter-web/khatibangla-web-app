@@ -129,7 +129,7 @@ try {
 $courierRates = [];
 foreach (['Pathao','RedX','Steadfast'] as $cn) {
     try {
-        $cr = $db->fetch("SELECT COUNT(*) as total, SUM(CASE WHEN order_status='delivered' THEN 1 ELSE 0 END) as delivered, SUM(CASE WHEN order_status='cancelled' THEN 1 ELSE 0 END) as cancelled FROM orders WHERE customer_phone LIKE ? AND LOWER(courier_name) LIKE ?", [$ph, strtolower($cn).'%']);
+        $cr = $db->fetch("SELECT COUNT(*) as total, SUM(CASE WHEN order_status='delivered' THEN 1 ELSE 0 END) as delivered, SUM(CASE WHEN order_status='cancelled' THEN 1 ELSE 0 END) as cancelled FROM orders WHERE customer_phone LIKE ? AND (LOWER(courier_name) LIKE ? OR LOWER(shipping_method) LIKE ?)", [$ph, strtolower($cn).'%', '%'.strtolower($cn).'%']);
         $courierRates[$cn] = ['total'=>intval($cr['total']??0),'delivered'=>intval($cr['delivered']??0),'cancelled'=>intval($cr['cancelled']??0),'rate'=>($cr['total']??0)>0?round($cr['delivered']/$cr['total']*100):0];
     } catch (\Throwable $e) { $courierRates[$cn] = ['total'=>0,'delivered'=>0,'cancelled'=>0,'rate'=>0]; }
 }
@@ -239,6 +239,20 @@ require_once __DIR__ . '/../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                     <?php if (!empty($order['courier_status'])): ?><div class="text-[10px] text-indigo-600 mt-1">📡 <?= e($order['courier_status']) ?></div><?php endif; ?>
+                    <?php if (!empty($order['courier_consignment_id']) || !empty($order['pathao_consignment_id'])):
+                        $__ovCn = strtolower($order['courier_name'] ?: ($order['shipping_method'] ?? ''));
+                        $__ovCid = $order['courier_consignment_id'] ?: ($order['pathao_consignment_id'] ?? '');
+                        $__ovTid = $order['courier_tracking_id'] ?: $__ovCid;
+                        if (strpos($__ovCn, 'steadfast') !== false) {
+                            $__ovLink = 'https://portal.steadfast.com.bd/find-consignment?consignment_id=' . urlencode($__ovCid);
+                        } elseif (strpos($__ovCn, 'pathao') !== false) {
+                            $__ovLink = 'https://merchant.pathao.com/courier/consignments/' . urlencode($__ovCid);
+                        } else { $__ovLink = '#'; }
+                    ?>
+                    <a href="<?= $__ovLink ?>" target="_blank" class="inline-flex items-center gap-1 mt-1 px-2 py-1 bg-green-50 border border-green-200 rounded text-xs text-green-700 hover:bg-green-100 transition font-mono">
+                        📦 <?= e($__ovTid) ?> <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                    </a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -289,6 +303,130 @@ require_once __DIR__ . '/../includes/header.php';
                 <div><label class="block text-xs font-semibold text-gray-700 mb-1">Area</label><select id="pAreaId" class="w-full px-3 py-2 border border-gray-200 rounded-md text-sm" disabled><option value="">Select Area</option></select></div>
             </div>
             <div id="autoDetectResult" class="mt-2 text-xs hidden"></div>
+        </div>
+
+        
+        <!-- ▸ Courier Tracking Card (Pathao + Steadfast + Any courier) -->
+        <?php 
+        // Resolve consignment ID from ALL possible columns
+        $__cid = $order['courier_consignment_id'] ?? '';
+        $__pathaoCid = $order['pathao_consignment_id'] ?? '';
+        $__tid = $order['courier_tracking_id'] ?? '';
+        $__courierName = strtolower($order['courier_name'] ?: ($order['shipping_method'] ?? ''));
+        
+        // Normalize: pick best CID available
+        if (empty($__cid) && !empty($__pathaoCid)) $__cid = $__pathaoCid;
+        if (empty($__tid)) $__tid = $__cid;
+        
+        $__hasCid = !empty($__cid);
+        $__isSf = strpos($__courierName, 'steadfast') !== false;
+        $__isPathao = strpos($__courierName, 'pathao') !== false;
+        $__canUpload = in_array($order['order_status'], ['processing','confirmed','ready_to_ship','approved']);
+        $__isShipped = in_array($order['order_status'], ['shipped','on_hold','pending_return','pending_cancel','partial_delivered','delivered']);
+        
+        // Build portal link
+        if ($__isSf && $__hasCid) {
+            $__portalLink = 'https://portal.steadfast.com.bd/find-consignment?consignment_id=' . urlencode($__cid);
+            $__portalName = 'Steadfast Portal';
+            $__trackLink = 'https://steadfast.com.bd/t/' . urlencode($__tid);
+        } elseif ($__isPathao && $__hasCid) {
+            $__portalLink = 'https://merchant.pathao.com/courier/consignments/' . urlencode($__cid);
+            $__portalName = 'Pathao Portal';
+            $__trackLink = '';
+        } else {
+            $__portalLink = '';
+            $__portalName = '';
+            $__trackLink = '';
+        }
+        ?>
+        <div id="sf-tracking-card" class="bg-white border border-gray-200 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-bold text-gray-800">📦 Courier Tracking</h4>
+                <div class="flex items-center gap-2">
+                    <?php if ($__hasCid): ?>
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">✓ Uploaded</span>
+                    <button type="button" onclick="courierSync(<?= $order['id'] ?>)" id="syncBtn" class="text-xs px-2 py-1 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition">🔄 Sync</button>
+                    <?php elseif ($__canUpload): ?>
+                    <button type="button" onclick="uploadToCourier(<?= $order['id'] ?>)" id="sfUploadBtn" class="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium">🚀 Upload to Steadfast</button>
+                    <?php endif; ?>
+                </div>
+            </div>
+            
+            <?php if ($__hasCid): ?>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                <div>
+                    <span class="text-gray-500 block">Courier</span>
+                    <div class="font-semibold text-gray-800"><?= e(!empty($order['courier_name']) ? $order['courier_name'] : (!empty($order['shipping_method']) ? $order['shipping_method'] : 'Unknown')) ?></div>
+                </div>
+                <div>
+                    <span class="text-gray-500 block">Consignment ID</span>
+                    <?php if ($__portalLink): ?>
+                    <a href="<?= $__portalLink ?>" target="_blank" class="font-mono font-semibold text-blue-600 hover:underline block"><?= e($__cid) ?> ↗</a>
+                    <?php else: ?>
+                    <div class="font-mono font-semibold text-gray-800"><?= e($__cid) ?></div>
+                    <?php endif; ?>
+                </div>
+                <div>
+                    <span class="text-gray-500 block">Tracking Code</span>
+                    <div class="font-mono font-semibold text-gray-800"><?= e($__tid) ?></div>
+                </div>
+                <div>
+                    <span class="text-gray-500 block">Courier Status</span>
+                    <?php 
+                    $__cStat = $order['courier_status'] ?? 'unknown';
+                    $__cStatColor = 'text-gray-600';
+                    if (in_array($__cStat, ['delivered','delivered_approval_pending','Delivered','payment_invoice','Payment_Invoice'])) $__cStatColor = 'text-green-600';
+                    elseif (in_array($__cStat, ['cancelled','cancelled_approval_pending','Cancelled','pickup_cancelled','pending_cancel'])) $__cStatColor = 'text-red-600';
+                    elseif (in_array($__cStat, ['return','Return','Returned','Return_Ongoing','paid_return','exchange','Exchange','pending_return'])) $__cStatColor = 'text-orange-600';
+                    elseif (in_array($__cStat, ['hold','Hold','on_hold','delivery_failed','pickup_failed'])) $__cStatColor = 'text-yellow-600';
+                    elseif (in_array($__cStat, ['partial_delivery','partial_delivered','Partial_Delivered','partial_delivered_approval_pending'])) $__cStatColor = 'text-cyan-600';
+                    elseif (in_array($__cStat, ['in_review','Picked','In_Transit','At_Transit','Delivery_Ongoing','in_transit','at_the_sorting_hub','assigned_for_delivery','received_at_last_mile_hub','pickup','assigned_for_pickup'])) $__cStatColor = 'text-blue-600';
+                    elseif (in_array($__cStat, ['order_created','order_updated','pickup_requested'])) $__cStatColor = 'text-indigo-600';
+                    ?>
+                    <div class="font-semibold <?= $__cStatColor ?>" id="courierStatusVal"><?= e($__cStat) ?></div>
+                </div>
+            </div>
+            
+            <!-- Live-fetched data placeholder -->
+            <div id="courierLiveData" class="hidden mt-2"></div>
+            
+            <?php if (!empty($order['courier_tracking_message'])): ?>
+            <div class="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700" id="trackingMsg">📍 <?= e($order['courier_tracking_message']) ?></div>
+            <?php else: ?>
+            <div class="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700 hidden" id="trackingMsg"></div>
+            <?php endif; ?>
+            
+            <?php if (!empty($order['courier_delivery_charge']) && floatval($order['courier_delivery_charge']) > 0): ?>
+            <div class="mt-2 text-xs text-gray-500" id="courierCharges">Delivery Charge: ৳<?= number_format(floatval($order['courier_delivery_charge'])) ?> | COD: ৳<?= number_format(floatval($order['courier_cod_amount'] ?? 0)) ?></div>
+            <?php else: ?>
+            <div class="mt-2 text-xs text-gray-500 hidden" id="courierCharges"></div>
+            <?php endif; ?>
+            
+            <?php if (!empty($order['courier_uploaded_at'])): ?>
+            <div class="mt-1 text-[10px] text-gray-400">Uploaded: <?= date('d M Y, h:i A', strtotime($order['courier_uploaded_at'])) ?></div>
+            <?php endif; ?>
+            
+            <div class="flex flex-wrap gap-2 mt-3">
+                <?php if ($__portalLink): ?>
+                <a href="<?= $__portalLink ?>" target="_blank" class="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">🔗 <?= $__portalName ?></a>
+                <?php endif; ?>
+                <?php if ($__trackLink): ?>
+                <a href="<?= $__trackLink ?>" target="_blank" class="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition">📱 Customer Track</a>
+                <?php endif; ?>
+            </div>
+            
+            <?php elseif ($__isShipped): ?>
+            <div class="text-xs text-gray-500">
+                <span class="block mb-1">Courier: <b><?= e(!empty($order['courier_name']) ? $order['courier_name'] : (!empty($order['shipping_method']) ? $order['shipping_method'] : 'Unknown')) ?></b></span>
+                <span class="text-gray-400">No consignment ID stored yet. Status will auto-update via webhook.</span>
+            </div>
+            
+            <?php elseif ($__canUpload): ?>
+            <p class="text-xs text-gray-500">Order ready to upload. Select delivery method above, then click "Upload to Steadfast".</p>
+            
+            <?php else: ?>
+            <p class="text-xs text-gray-400">Courier tracking will appear here after upload.</p>
+            <?php endif; ?>
         </div>
 
         <!-- ▸ Products: Ordered + Add -->
@@ -556,7 +694,7 @@ function updCard(id,data){
     c.querySelector('[data-bar]').style.width=Math.min(100,rate)+'%';
     if(data.api_checked>0)re.innerHTML+=' <span style="color:#22c55e;font-size:9px">✓API</span>';
 }
-<?php if(in_array($order['order_status'],['shipped','delivered','pending_return','pending_cancel','partial_delivered','returned','cancelled'])):?>
+<?php if(!empty($order['customer_phone'])):?>
 document.addEventListener('DOMContentLoaded',()=>setTimeout(fetchCourierData,500));
 <?php endif;?>
 
@@ -635,4 +773,73 @@ async function autoDetectLocation(){
 function esc(s){return s?s.replace(/&/g,'&amp;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;'):''}
 calcTotals();
 </script>
+<script>
+/* ── Courier Tracking: Upload / Sync / Auto-fetch ── */
+var COURIER_API = '<?= SITE_URL ?>/api/steadfast-actions.php';
+var PATHAO_API  = '<?= SITE_URL ?>/api/pathao-api.php';
+
+function uploadToCourier(orderId) {
+    if (!confirm('Upload this order to Steadfast?')) return;
+    var btn = document.getElementById('sfUploadBtn');
+    if(btn){btn.disabled=true;btn.textContent='⏳ Uploading...';}
+    fetch(COURIER_API, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'upload_order', order_id:orderId})})
+    .then(function(r){return r.json()}).then(function(d) {
+        if (d.success) { location.reload(); }
+        else { alert('❌ ' + (d.message || d.error || 'Upload failed')); if(btn){btn.disabled=false;btn.textContent='🚀 Upload to Steadfast';} }
+    }).catch(function(e) { alert('Error: ' + e.message); if(btn){btn.disabled=false;btn.textContent='🚀 Upload to Steadfast';} });
+}
+
+function courierSync(orderId) {
+    var btn = document.getElementById('syncBtn');
+    if(btn){var orig=btn.textContent; btn.textContent='⏳...';}
+    fetch(COURIER_API, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'sync_courier', order_id:orderId})})
+    .then(function(r){return r.json()}).then(function(d) {
+        if (d.success) { 
+            // Update UI inline without reload
+            courierUpdateUI(d);
+        } else { 
+            alert('❌ ' + (d.error || 'Sync failed')); 
+        }
+        if(btn) btn.textContent='🔄 Sync';
+    }).catch(function(e) { alert('Error: ' + e.message); if(btn) btn.textContent='🔄 Sync'; });
+}
+
+function courierUpdateUI(d) {
+    var el;
+    // Update courier status
+    if (d.courier_status) {
+        el = document.getElementById('courierStatusVal');
+        if (el) { el.textContent = d.courier_status; }
+    }
+    // Update tracking message
+    if (d.tracking_message) {
+        el = document.getElementById('trackingMsg');
+        if (el) { el.textContent = '📍 ' + d.tracking_message; el.classList.remove('hidden'); }
+    }
+    // Update charges
+    if (d.delivery_charge && parseFloat(d.delivery_charge) > 0) {
+        el = document.getElementById('courierCharges');
+        if (el) { el.textContent = 'Delivery Charge: ৳' + Number(d.delivery_charge).toLocaleString() + ' | COD: ৳' + Number(d.cod_amount||0).toLocaleString(); el.classList.remove('hidden'); }
+    }
+    // Update live data section
+    el = document.getElementById('courierLiveData');
+    if (el && d.live_status) {
+        el.innerHTML = '<div class="text-[10px] text-gray-500">Live: <b>' + (d.live_status||'') + '</b> — synced just now</div>';
+        el.classList.remove('hidden');
+    }
+}
+
+// ── Auto-fetch courier status on page load ──
+<?php if ($__hasCid && $__isShipped): ?>
+(function(){
+    setTimeout(function(){
+        fetch(COURIER_API, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'sync_courier', order_id:<?= intval($order['id']) ?>})})
+        .then(function(r){return r.json()}).then(function(d){
+            if(d.success) courierUpdateUI(d);
+        }).catch(function(){});
+    }, 500);
+})();
+<?php endif; ?>
+</script>
+<?php include __DIR__ . '/../includes/phone-checker-widget.php'; ?>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

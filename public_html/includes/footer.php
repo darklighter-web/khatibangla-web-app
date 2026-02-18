@@ -154,6 +154,7 @@ $footerPages = Database::getInstance()->fetchAll("SELECT title, slug FROM pages 
                 // Default field order
                 $checkoutFields = [
                     ['key'=>'cart_summary','label'=>'পণ্যের তালিকা','type'=>'system','enabled'=>true,'required'=>false,'placeholder'=>''],
+                    ['key'=>'progress_bar','label'=>'প্রোগ্রেস বার অফার','type'=>'system','enabled'=>true,'required'=>false,'placeholder'=>''],
                     ['key'=>'name','label'=>'আপনার নাম','type'=>'text','enabled'=>true,'required'=>true,'placeholder'=>'সম্পূর্ণ নাম লিখুন'],
                     ['key'=>'phone','label'=>'মোবাইল নম্বর','type'=>'tel','enabled'=>true,'required'=>true,'placeholder'=>'01XXXXXXXXX'],
                     ['key'=>'email','label'=>'ইমেইল','type'=>'email','enabled'=>false,'required'=>false,'placeholder'=>'your@email.com'],
@@ -178,6 +179,7 @@ $footerPages = Database::getInstance()->fetchAll("SELECT title, slug FROM pages 
                 // Merge in any new default fields that aren't in saved config
                 $_defaultFields = [
                     ['key'=>'cart_summary','label'=>'পণ্যের তালিকা','type'=>'system','enabled'=>true,'required'=>false,'placeholder'=>''],
+                    ['key'=>'progress_bar','label'=>'প্রোগ্রেস বার অফার','type'=>'system','enabled'=>true,'required'=>false,'placeholder'=>''],
                     ['key'=>'name','label'=>'আপনার নাম','type'=>'text','enabled'=>true,'required'=>true,'placeholder'=>'সম্পূর্ণ নাম লিখুন'],
                     ['key'=>'phone','label'=>'মোবাইল নম্বর','type'=>'tel','enabled'=>true,'required'=>true,'placeholder'=>'01XXXXXXXXX'],
                     ['key'=>'email','label'=>'ইমেইল','type'=>'email','enabled'=>false,'required'=>false,'placeholder'=>'your@email.com'],
@@ -226,6 +228,24 @@ $footerPages = Database::getInstance()->fetchAll("SELECT title, slug FROM pages 
                 $custCreditTk = round($custCredit * $creditConversionRate, 2);
             }
             
+            // Load active progress bar (checkout field enabled/disabled is the sole toggle)
+            $__progressBar = null;
+            try {
+                $__pbDb = Database::getInstance();
+                // Auto-create table if missing
+                $__pbDb->query("CREATE TABLE IF NOT EXISTS checkout_progress_bars (
+                    id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL,
+                    template TINYINT DEFAULT 1, tiers JSON DEFAULT NULL, config JSON DEFAULT NULL,
+                    is_active TINYINT DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                $__progressBar = $__pbDb->fetch("SELECT * FROM checkout_progress_bars WHERE is_active = 1 LIMIT 1");
+                if ($__progressBar) {
+                    $__progressBar['tiers'] = json_decode($__progressBar['tiers'] ?? '[]', true) ?: [];
+                    $__progressBar['config'] = json_decode($__progressBar['config'] ?? '{}', true) ?: [];
+                }
+            } catch (\Throwable $e) { $__progressBar = null; }
+            
             foreach ($checkoutFields as $cf):
                 if (!($cf['enabled'] ?? true)) continue;
                 $key = $cf['key'];
@@ -244,6 +264,11 @@ $footerPages = Database::getInstance()->fetchAll("SELECT title, slug FROM pages 
                     <!-- Filled by JS -->
                 </div>
             </div>
+            <?php elseif ($key === 'progress_bar'): ?>
+            <!-- Progress Bar Offer -->
+            <?php if ($__progressBar && !empty($__progressBar['tiers'])): ?>
+            <div id="checkout-progress-bar" data-template="<?= intval($__progressBar['template']) ?>"></div>
+            <?php endif; ?>
             <?php elseif ($key === 'name'): ?>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1"><?= e($label) ?><?= $star ?></label>
@@ -372,6 +397,10 @@ $footerPages = Database::getInstance()->fetchAll("SELECT title, slug FROM pages 
                 <div id="coupon-discount-row" class="hidden flex justify-between text-green-600">
                     <span><i class="fas fa-tag mr-1"></i> কুপন ছাড়:</span><span id="popup-discount" class="font-medium">-৳ 0</span>
                 </div>
+                <div id="progress-discount-row" class="hidden flex justify-between text-orange-600">
+                    <span><i class="fas fa-gift mr-1"></i> অফার ছাড়:</span><span id="popup-progress-discount" class="font-medium">-৳ 0</span>
+                </div>
+                <input type="hidden" id="progress-bar-discount" name="progress_bar_discount" value="0">
                 <?php if ($custCredit >= 1): ?>
                 <div id="credit-applied-row" class="hidden flex justify-between text-yellow-700">
                     <span><i class="fas fa-coins mr-1"></i> স্টোর ক্রেডিট:</span><span id="popup-credit" class="font-medium">-৳ 0</span>
@@ -447,6 +476,12 @@ const SHIPPING_DHAKA_SUB = Number(<?= (int)getSetting('shipping_dhaka_sub', 100)
 const SHIPPING_OUTSIDE = Number(<?= (int)getSetting('shipping_outside_dhaka', 130) ?>) || 130;
 const FREE_SHIPPING_MIN = Number(<?= (int)getSetting('free_shipping_minimum', 5000) ?>) || 0;
 const ORDER_NOW_CLEAR_CART = <?= getSetting('order_now_clear_cart', '1') === '1' ? 'true' : 'false' ?>;
+const PROGRESS_BAR = <?= json_encode([
+    'enabled' => !empty($__progressBar) && !empty($__progressBar['tiers']),
+    'template' => intval($__progressBar['template'] ?? 1),
+    'tiers' => $__progressBar['tiers'] ?? [],
+    'config' => $__progressBar['config'] ?? [],
+], JSON_UNESCAPED_UNICODE) ?>;
 
 // Mobile Menu
 function toggleMobileMenu() {
@@ -833,11 +868,11 @@ function showCheckoutModal() {
         let html = '';
         data.items.forEach(item => {
             const isBundle = item.is_bundle || false;
+            const isFreeGift = item.is_free_gift || false;
             const salePrice = parseFloat(item.price) || 0;
             const qty = parseInt(item.quantity) || 1;
             
             // Only bundles get discount display in checkout
-            // Regular products: sale price IS the listed price, not a "discount"
             const bundleSeparate = isBundle ? (parseFloat(item.bundle_separate || item.regular_price) || salePrice) : salePrice;
             const bundleSavings = isBundle ? (parseFloat(item.bundle_savings) || Math.max(0, bundleSeparate - salePrice)) : 0;
             const bundleDiscPct = isBundle && bundleSeparate > 0 && bundleSavings > 0
@@ -846,11 +881,14 @@ function showCheckoutModal() {
             
             const variantTag = item.variant_name ? `<span class="text-xs text-gray-400 block truncate">${item.variant_name}</span>` : '';
             const bundleTag = isBundle ? `<span class="inline-flex items-center gap-1 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium"><i class="fas fa-gift"></i>বান্ডেল</span> ` : '';
+            const freeTag = isFreeGift ? `<span class="inline-flex items-center gap-1 text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-medium">🎁 ফ্রি</span> ` : '';
             
-            // Price display: bundles show strikethrough of separate price, regular items just show price
-            const priceDisplay = isBundle && bundleSavings > 0
-                ? `<span class="text-xs text-gray-400 line-through mr-1">${CURRENCY}${Number(bundleSeparate).toLocaleString()}</span>${CURRENCY}${Number(salePrice).toLocaleString()}`
-                : `${CURRENCY}${Number(salePrice).toLocaleString()}`;
+            // Price display
+            const priceDisplay = isFreeGift 
+                ? `<span class="text-xs text-gray-400 line-through mr-1">${CURRENCY}${Number(parseFloat(item.regular_price)||0).toLocaleString()}</span><span class="text-green-600 font-bold">ফ্রি!</span>`
+                : (isBundle && bundleSavings > 0
+                    ? `<span class="text-xs text-gray-400 line-through mr-1">${CURRENCY}${Number(bundleSeparate).toLocaleString()}</span>${CURRENCY}${Number(salePrice).toLocaleString()}`
+                    : `${CURRENCY}${Number(salePrice).toLocaleString()}`);
             const discBadge = isBundle && bundleDiscPct > 0 ? `<span class="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold ml-1">${bundleDiscPct}% OFF</span>` : '';
             
             const lineTotal = salePrice * qty;
@@ -859,19 +897,19 @@ function showCheckoutModal() {
             html += `<div class="flex items-center gap-2.5 checkout-cart-item" data-key="${item.key}" data-price="${salePrice}" data-bundle-savings="${bundleSavings}" data-is-bundle="${isBundle ? 1 : 0}">
                 <img src="${item.image}" class="w-11 h-11 rounded-lg object-cover border flex-shrink-0" alt="">
                 <div class="flex-1 min-w-0 overflow-hidden">
-                    <p class="text-sm font-medium leading-tight" style="display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;word-break:break-all">${bundleTag}${item.name}${discBadge}</p>
+                    <p class="text-sm font-medium leading-tight" style="display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;word-break:break-all">${freeTag}${bundleTag}${item.name}${discBadge}</p>
                     ${variantTag}
                     <div class="flex items-center gap-1.5 mt-1">
-                        <button type="button" onclick="checkoutQty('${item.key}',-1)" class="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 flex items-center justify-center text-xs font-bold flex-shrink-0">−</button>
+                        ${isFreeGift ? '' : `<button type="button" onclick="checkoutQty('${item.key}',-1)" class="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 flex items-center justify-center text-xs font-bold flex-shrink-0">−</button>`}
                         <span class="text-sm font-semibold item-qty" data-key="${item.key}">${qty}</span>
-                        <button type="button" onclick="checkoutQty('${item.key}',1)" class="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 flex items-center justify-center text-xs font-bold flex-shrink-0">+</button>
+                        ${isFreeGift ? '' : `<button type="button" onclick="checkoutQty('${item.key}',1)" class="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 flex items-center justify-center text-xs font-bold flex-shrink-0">+</button>`}
                         <span class="text-xs text-gray-400 ml-0.5">× ${priceDisplay}</span>
                     </div>
                 </div>
                 <div class="text-right flex-shrink-0 flex flex-col items-end gap-0.5 ml-1">
-                    <span class="text-sm font-semibold whitespace-nowrap item-total" data-key="${item.key}">${CURRENCY}${lineTotal.toLocaleString()}</span>
+                    <span class="text-sm font-semibold whitespace-nowrap item-total" data-key="${item.key}">${isFreeGift ? '<span class=text-green-600>ফ্রি</span>' : CURRENCY + lineTotal.toLocaleString()}</span>
                     ${lineSaved > 0 ? `<span class="text-[10px] text-green-600 font-medium whitespace-nowrap item-save-tag">সেভ ${CURRENCY}${lineSaved.toLocaleString()}</span>` : ''}
-                    <button type="button" onclick="checkoutRemove('${item.key}')" class="text-red-400 hover:text-red-600 text-xs px-1"><i class="fas fa-trash-alt"></i></button>
+                    ${isFreeGift ? '' : `<button type="button" onclick="checkoutRemove('${item.key}')" class="text-red-400 hover:text-red-600 text-xs px-1"><i class="fas fa-trash-alt"></i></button>`}
                 </div>
             </div>`;
         });
@@ -898,7 +936,20 @@ function showCheckoutModal() {
             ', rate=' + (document.getElementById('store-credit-rate')?.value || 'N/A') +
             ', checkbox exists=' + (!!_creditCb));
         
+        // Reset progress bar discount
+        document.getElementById('progress-discount-row')?.classList.add('hidden');
+        const _pbInput = document.getElementById('progress-bar-discount');
+        if (_pbInput) _pbInput.value = '0';
+        
         updatePopupTotals(data.total);
+        
+        // Sync free gifts from progress bar
+        syncFreeGifts().then(refreshedData => {
+            if (refreshedData && refreshedData.items) {
+                // Re-render cart summary with new items (free gifts added/removed)
+                refreshCheckoutCartDisplay(refreshedData);
+            }
+        });
         
         // Load upsells for products in cart
         loadUpsells(data.items.map(i => i.product_id));
@@ -916,6 +967,200 @@ function showCheckoutModal() {
         // Track incomplete order
         trackIncomplete('cart', data);
     });
+}
+
+// ═══════════════════════════════════════════
+// PROGRESS BAR SYSTEM
+// ═══════════════════════════════════════════
+
+// Evenly-spaced milestone % calculation
+// With 3 tiers, each gets 33.3% of the bar. Progress within each segment is proportional.
+function calcProgressPct(amount, tiers) {
+    if (!tiers.length) return 0;
+    const n = tiers.length;
+    const segSize = 100 / n; // each milestone = equal segment
+    // Find which segment we're in
+    for (let i = 0; i < n; i++) {
+        const prevAmt = i === 0 ? 0 : tiers[i-1].min_amount;
+        const curAmt = tiers[i].min_amount;
+        if (amount < curAmt) {
+            // We're in this segment
+            const segProgress = (curAmt > prevAmt) ? (amount - prevAmt) / (curAmt - prevAmt) : 0;
+            return Math.min(100, (i * segSize) + (segProgress * segSize));
+        }
+    }
+    return 100; // All unlocked
+}
+
+// Where each milestone dot should sit (%) 
+function milestonePct(idx, total) { return ((idx + 1) / total) * 100; }
+
+function renderProgressBar(subtotal) {
+    const el = document.getElementById('checkout-progress-bar');
+    if (!el || !PROGRESS_BAR.enabled || !PROGRESS_BAR.tiers.length) return;
+    const tiers = PROGRESS_BAR.tiers;
+    const tpl = PROGRESS_BAR.template || 1;
+    const cfg = PROGRESS_BAR.config || {};
+    const pct = calcProgressPct(subtotal, tiers);
+    let nextTier = tiers.find(t => subtotal < t.min_amount);
+    let remaining = nextTier ? (nextTier.min_amount - subtotal) : 0;
+    const n = tiers.length;
+    
+    // Custom colors (fallback to template defaults)
+    const DEFS = {1:{bg:'#f3f4f6',f:'#ef4444',t:'#22c55e'},2:{bg:'#e5e7eb',f:'#22c55e',t:'#22c55e'},3:{bg:'#1e1b4b',f:'#7c3aed',t:'#f59e0b'},4:{bg:'#fef9c3',f:'#facc15',t:'#f43f5e'},5:{bg:'#f9fafb',f:'#111827',t:'#111827'},6:{bg:'#374151',f:'#f59e0b',t:'#ef4444'}};
+    const d = DEFS[tpl] || DEFS[1];
+    const cBg = cfg.color_track_bg || d.bg;
+    const cFrom = cfg.color_fill_from || d.f;
+    const cTo = cfg.color_fill_to || d.t;
+    const hgt = cfg.height || 'normal';
+    
+    // Vertical shrink: ONLY reduce padding, spacing, bar thickness — text stays readable
+    const shrk = cfg.shrink || (hgt==='slim'?40:hgt==='compact'?25:0); // backward compat
+    const s = shrk / 100; // 0 to 0.5
+    const pad = `${Math.round(12*(1-s))}px ${Math.round(16*(1-s*0.3))}px`;
+    const barH = Math.max(3, Math.round(10*(1-s)));
+    const gap = Math.round(6*(1-s)) + 'px';
+    const msgMt = Math.round(8*(1-s)) + 'px';
+    const dotSz = Math.max(24, Math.round(36*(1-s)));
+    // Text stays readable at ALL sizes — never shrink below 10-11px
+    const fSz = '11px';
+    const iSz = '14px';
+    
+    let msg = nextTier 
+        ? `<p style="font-size:11px;font-weight:600;margin-top:${msgMt};color:#ea580c">আরো <strong>৳${remaining.toLocaleString()}</strong> যোগ করলে <strong>${nextTier.label_bn||''}</strong> পাবেন! ${nextTier.icon}</p>`
+        : `<p style="font-size:11px;font-weight:600;margin-top:${msgMt};color:#16a34a">🎉 সব রিওয়ার্ড আনলক হয়েছে!</p>`;
+    
+    // Template 6: Dark Track
+    if (tpl === 6) {
+        const dtH = Math.max(3, Math.round(8*(1-s)));
+        let dots = '';
+        tiers.forEach((t, i) => {
+            const pos = milestonePct(i, n);
+            const done = subtotal >= t.min_amount;
+            dots += `<div style="position:absolute;left:${pos}%;top:50%;transform:translate(-50%,-50%);z-index:2"><div style="width:${dotSz}px;height:${dotSz}px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:${iSz};${done?'background:#22c55e;color:#fff;box-shadow:0 0 0 3px rgba(34,197,94,0.3)':'background:#fff;color:#374151;border:2px solid #9ca3af;box-shadow:0 1px 3px rgba(0,0,0,0.15)'};transition:all .3s">${done?'✓':t.icon}</div></div>`;
+        });
+        let labels = tiers.map((t, i) => {
+            const pos = milestonePct(i, n);
+            const done = subtotal >= t.min_amount;
+            return `<div style="position:absolute;left:${pos}%;transform:translateX(-50%);text-align:center;white-space:nowrap"><div style="font-size:${fSz};font-weight:${done?700:500};color:${done?'#16a34a':'#6b7280'};margin-top:2px">${t.label_bn}</div><div style="font-size:${fSz};color:${done?'#22c55e':'#9ca3af'}">৳${Number(t.min_amount).toLocaleString()}</div></div>`;
+        }).join('');
+        el.innerHTML = `<div style="background:linear-gradient(135deg,#fefce8,#fff7ed);border-radius:12px;padding:${pad};border:1px solid #fed7aa">
+            <div style="text-align:center;margin-bottom:${gap}">${nextTier?`<span style="display:inline-block;background:#1f2937;color:#fff;font-size:11px;padding:3px 12px;border-radius:9999px;font-weight:600">আরো <strong style="color:#fbbf24">৳${remaining.toLocaleString()}</strong> যোগ করলে ${nextTier.label_bn} পাবেন!</span>`:`<span style="display:inline-block;background:#16a34a;color:#fff;font-size:11px;padding:3px 12px;border-radius:9999px;font-weight:600">🎉 সব রিওয়ার্ড আনলক!</span>`}</div>
+            <div style="position:relative;height:${dotSz}px;margin:0 18px"><div style="position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);height:${dtH}px;background:${cBg};border-radius:9999px;overflow:hidden"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,${cFrom},${cTo});border-radius:9999px;transition:width .5s ease;box-shadow:0 0 8px ${cFrom}66"></div></div>${dots}</div>
+            <div style="position:relative;height:30px;margin:${Math.round(4*(1-s))}px 18px 0">${labels}</div>
+        </div>`;
+        return;
+    }
+    
+    // Templates 1-5 with custom colors
+    // Milestone tick marks on bar track
+    const ticks = tiers.map((t, i) => {
+        const pos = milestonePct(i, n);
+        const done = subtotal >= t.min_amount;
+        return `<div style="position:absolute;left:${pos}%;top:0;bottom:0;width:2px;transform:translateX(-50%);background:${done?'rgba(255,255,255,0.6)':'rgba(0,0,0,0.12)'};z-index:1"></div>`;
+    }).join('');
+    
+    const tierHtml = t => {
+        const done = subtotal >= t.min_amount;
+        return `<div style="text-align:center;flex:1"><span style="font-size:14px;${done?'':'opacity:.6'}">${done?'✅':t.icon}</span><div style="font-size:11px;color:${done?'#16a34a':'#6b7280'};margin-top:1px;font-weight:${done?700:400};line-height:1.2">${t.label_bn}</div><div style="font-size:10px;color:${done?'#22c55e':'#9ca3af'}">৳${Number(t.min_amount).toLocaleString()}</div></div>`;
+    };
+    
+    let bS = `background:${cBg};border-radius:9999px;height:${barH}px;overflow:hidden;position:relative`;
+    let fS = `background:linear-gradient(90deg,${cFrom},${cTo});height:100%;border-radius:9999px;width:${pct}%;transition:width .5s`;
+    if (tpl===3) { bS=`background:${cBg};border-radius:12px;height:${barH}px;overflow:hidden;position:relative`; fS+=`;box-shadow:0 0 12px ${cFrom}66`; }
+    else if (tpl===4) { bS+=`;border:1px solid #fde047`; }
+    else if (tpl===5) { bS=`background:${cBg};height:${barH}px;position:relative`; fS=`background:${cFrom};height:100%;width:${pct}%;transition:width .5s`; }
+    
+    if (tpl===2) {
+        // Steps template with custom colors
+        const stepLine = `<div style="position:absolute;top:${dotSz/2}px;left:${dotSz/2}px;right:${dotSz/2}px;height:3px;background:${cBg};z-index:0"><div style="height:100%;background:${cFrom};width:${pct}%;transition:width .5s"></div></div>`;
+        const steps = tiers.map(t => {
+            const done = subtotal >= t.min_amount;
+            return `<div style="text-align:center;z-index:1"><div style="width:${dotSz}px;height:${dotSz}px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid ${done?cFrom:'#e5e7eb'};background:${done?cFrom:'#fff'};color:${done?'#fff':'#374151'};transition:all .3s;margin:0 auto">${done?'✓':t.icon}</div><div style="font-size:11px;margin-top:2px;font-weight:${done?700:500};color:${done?'#16a34a':'#6b7280'}">${t.label_bn}</div><div style="font-size:10px;color:${done?'#22c55e':'#9ca3af'}">৳${Number(t.min_amount).toLocaleString()}</div></div>`;
+        }).join('');
+        el.innerHTML = `<div style="background:linear-gradient(135deg,#fefce8,#fff7ed);border-radius:12px;padding:${pad};border:1px solid #fed7aa"><div style="display:flex;align-items:flex-start;justify-content:space-between;position:relative">${stepLine}${steps}</div>${msg}</div>`;
+    } else {
+        el.innerHTML = `<div style="background:linear-gradient(135deg,#fefce8,#fff7ed);border-radius:12px;padding:${pad};border:1px solid #fed7aa"><div style="display:flex;justify-content:space-between;margin-bottom:${gap}">${tiers.map(tierHtml).join('')}</div><div style="${bS}">${ticks}<div style="${fS}"></div></div>${msg}</div>`;
+    }
+}
+
+// ── Auto-render progress bar on page load if div exists ──
+// This ensures the bar shows in checkout-fields preview and any other page
+(function() {
+    var el = document.getElementById('checkout-progress-bar');
+    if (el && typeof PROGRESS_BAR !== 'undefined' && PROGRESS_BAR.enabled && PROGRESS_BAR.tiers && PROGRESS_BAR.tiers.length) {
+        // Use a middle-range sample subtotal for preview (first tier's amount * 0.75)
+        var sampleAmount = Math.round(PROGRESS_BAR.tiers[0].min_amount * 0.75) || 500;
+        try { renderProgressBar(sampleAmount); } catch(e) {}
+    }
+})();
+
+function getProgressBarRewards(subtotal) {
+    let discount = 0, freeShipping = false;
+    if (!PROGRESS_BAR.enabled || !PROGRESS_BAR.tiers.length) return {discount, freeShipping};
+    PROGRESS_BAR.tiers.forEach(t => {
+        if (subtotal >= t.min_amount) {
+            if (t.reward_type === 'free_shipping') freeShipping = true;
+            else if (t.reward_type === 'discount_fixed') discount += t.reward_value;
+            else if (t.reward_type === 'discount_percent') discount += Math.round(subtotal * t.reward_value / 100);
+        }
+    });
+    return {discount, freeShipping};
+}
+
+function syncFreeGifts() {
+    if (!PROGRESS_BAR.enabled) return Promise.resolve();
+    return fetch(SITE_URL + '/api/progress-bar.php?action=sync_gifts')
+    .then(r => r.json())
+    .then(d => {
+        if (d.changed) {
+            return fetch(SITE_URL + '/api/cart.php?action=get').then(r => r.json());
+        }
+        return null;
+    }).catch(() => null);
+}
+
+function refreshCheckoutCartDisplay(data) {
+    if (!data || !data.items) return;
+    let html = '';
+    data.items.forEach(item => {
+        const isBundle = item.is_bundle || false;
+        const isFreeGift = item.is_free_gift || false;
+        const salePrice = parseFloat(item.price) || 0;
+        const qty = parseInt(item.quantity) || 1;
+        const bundleSeparate = isBundle ? (parseFloat(item.bundle_separate || item.regular_price) || salePrice) : salePrice;
+        const bundleSavings = isBundle ? (parseFloat(item.bundle_savings) || Math.max(0, bundleSeparate - salePrice)) : 0;
+        const bundleDiscPct = isBundle && bundleSeparate > 0 && bundleSavings > 0 ? (parseInt(item.bundle_discount_pct) || Math.round((bundleSavings / bundleSeparate) * 100)) : 0;
+        const variantTag = item.variant_name ? `<span class="text-xs text-gray-400 block truncate">${item.variant_name}</span>` : '';
+        const bundleTag = isBundle ? `<span class="inline-flex items-center gap-1 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium"><i class="fas fa-gift"></i>বান্ডেল</span> ` : '';
+        const freeTag = isFreeGift ? `<span class="inline-flex items-center gap-1 text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-medium">🎁 ফ্রি</span> ` : '';
+        const priceDisplay = isFreeGift ? `<span class="text-xs text-gray-400 line-through mr-1">${CURRENCY}${Number(parseFloat(item.regular_price)||0).toLocaleString()}</span><span class="text-green-600 font-bold">ফ্রি!</span>` : (isBundle && bundleSavings > 0 ? `<span class="text-xs text-gray-400 line-through mr-1">${CURRENCY}${Number(bundleSeparate).toLocaleString()}</span>${CURRENCY}${Number(salePrice).toLocaleString()}` : `${CURRENCY}${Number(salePrice).toLocaleString()}`);
+        const discBadge = isBundle && bundleDiscPct > 0 ? `<span class="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold ml-1">${bundleDiscPct}% OFF</span>` : '';
+        const lineTotal = salePrice * qty;
+        const lineSaved = bundleSavings * qty;
+        
+        html += `<div class="flex items-center gap-2.5 checkout-cart-item" data-key="${item.key}" data-price="${salePrice}" data-bundle-savings="${bundleSavings}" data-is-bundle="${isBundle ? 1 : 0}">
+            <img src="${item.image}" class="w-11 h-11 rounded-lg object-cover border flex-shrink-0" alt="">
+            <div class="flex-1 min-w-0 overflow-hidden">
+                <p class="text-sm font-medium leading-tight" style="display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;word-break:break-all">${freeTag}${bundleTag}${item.name}${discBadge}</p>
+                ${variantTag}
+                <div class="flex items-center gap-1.5 mt-1">
+                    ${isFreeGift ? '' : `<button type="button" onclick="checkoutQty('${item.key}',-1)" class="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 flex items-center justify-center text-xs font-bold flex-shrink-0">−</button>`}
+                    <span class="text-sm font-semibold item-qty" data-key="${item.key}">${qty}</span>
+                    ${isFreeGift ? '' : `<button type="button" onclick="checkoutQty('${item.key}',1)" class="w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 flex items-center justify-center text-xs font-bold flex-shrink-0">+</button>`}
+                    <span class="text-xs text-gray-400 ml-0.5">× ${priceDisplay}</span>
+                </div>
+            </div>
+            <div class="text-right flex-shrink-0 flex flex-col items-end gap-0.5 ml-1">
+                <span class="text-sm font-semibold whitespace-nowrap item-total" data-key="${item.key}">${isFreeGift ? '<span class=text-green-600>ফ্রি</span>' : CURRENCY + lineTotal.toLocaleString()}</span>
+                ${lineSaved > 0 ? `<span class="text-[10px] text-green-600 font-medium whitespace-nowrap item-save-tag">সেভ ${CURRENCY}${lineSaved.toLocaleString()}</span>` : ''}
+                ${isFreeGift ? '' : `<button type="button" onclick="checkoutRemove('${item.key}')" class="text-red-400 hover:text-red-600 text-xs px-1"><i class="fas fa-trash-alt"></i></button>`}
+            </div>
+        </div>`;
+    });
+    document.getElementById('popup-cart-summary').innerHTML = html;
+    document.querySelectorAll('.cart-count').forEach(el => el.textContent = data.count);
+    updatePopupTotals(data.total);
 }
 
 // ═══════════════════════════════════════════
@@ -1003,6 +1248,7 @@ function checkoutQty(key, delta) {
         }
         document.querySelectorAll('.cart-count').forEach(el => el.textContent = data.cart_count);
         updatePopupTotals(data.cart_total);
+        syncFreeGifts().then(rd => { if (rd) refreshCheckoutCartDisplay(rd); });
     });
 }
 function checkoutRemove(key) {
@@ -1014,6 +1260,7 @@ function checkoutRemove(key) {
         document.querySelectorAll('.cart-count').forEach(el => el.textContent = data.cart_count);
         if (!document.querySelector('.checkout-cart-item')) { closeCheckoutPopup(); showToast('কার্ট খালি!'); return; }
         updatePopupTotals(data.cart_total);
+        syncFreeGifts().then(rd => { if (rd) refreshCheckoutCartDisplay(rd); });
     });
 }
 
@@ -1129,8 +1376,24 @@ function updatePopupTotals(subtotal) {
         document.getElementById('coupon-discount-row').classList.add('hidden');
     }
     
-    // Total savings = bundle discount + coupon discount
-    const totalSavings = Math.round(totalBundleSavings) + couponDiscount;
+    // Progress bar rewards
+    let pbDiscount = 0;
+    const pbRewards = getProgressBarRewards(subtotal);
+    if (pbRewards.freeShipping) shipping = 0;
+    pbDiscount = pbRewards.discount;
+    if (pbDiscount > 0) {
+        document.getElementById('progress-discount-row')?.classList.remove('hidden');
+        const pdEl = document.getElementById('popup-progress-discount');
+        if (pdEl) pdEl.textContent = '-' + CURRENCY + ' ' + Number(pbDiscount).toLocaleString();
+    } else {
+        document.getElementById('progress-discount-row')?.classList.add('hidden');
+    }
+    const pbInput = document.getElementById('progress-bar-discount');
+    if (pbInput) pbInput.value = pbDiscount;
+    renderProgressBar(subtotal);
+    
+    // Total savings = bundle discount + coupon discount + progress bar discount
+    const totalSavings = Math.round(totalBundleSavings) + couponDiscount + pbDiscount;
     if (totalSavings > 0) {
         document.getElementById('total-savings-row').classList.remove('hidden');
         document.getElementById('popup-total-savings').textContent = CURRENCY + ' ' + Number(totalSavings).toLocaleString();
@@ -1149,7 +1412,7 @@ function updatePopupTotals(subtotal) {
     const creditRate = parseFloat(document.getElementById('store-credit-rate')?.value || 0.75);
     console.log('[CREDIT CALC] checkbox=' + (creditCheckbox ? creditCheckbox.checked : 'N/A') + ', maxTk=' + creditMaxTk + ', credits=' + creditTotal + ', rate=' + creditRate);
     if (creditCheckbox && creditCheckbox.checked && creditMaxTk > 0) {
-        const beforeCredit = subtotal + shipping - couponDiscount;
+        const beforeCredit = subtotal + shipping - couponDiscount - pbDiscount;
         creditUsed = Math.min(creditMaxTk, beforeCredit); // Can't exceed total, capped at TK equivalent
         creditUsed = Math.max(0, Math.round(creditUsed));
         const creditsBeingUsed = creditRate > 0 ? Math.ceil(creditUsed / creditRate) : 0;
@@ -1163,7 +1426,7 @@ function updatePopupTotals(subtotal) {
         if (scInput) scInput.value = 0;
     }
     
-    document.getElementById('popup-total').textContent = CURRENCY + ' ' + Number(subtotal + shipping - couponDiscount - creditUsed).toLocaleString();
+    document.getElementById('popup-total').textContent = CURRENCY + ' ' + Number(subtotal + shipping - couponDiscount - pbDiscount - creditUsed).toLocaleString();
 }
 
 function toggleStoreCredit() {
@@ -1329,6 +1592,11 @@ function getCheckoutFormData() {
         console.log('[CREDIT] FormData set store_credit_used=' + creditInput.value);
     } else {
         formData.set('store_credit_used', '0');
+    }
+    // Progress bar discount
+    const pbInput = document.getElementById('progress-bar-discount');
+    if (pbInput && parseFloat(pbInput.value) > 0) {
+        formData.set('progress_bar_discount', pbInput.value);
     }
     return formData;
 }

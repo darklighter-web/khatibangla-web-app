@@ -67,11 +67,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if (file_exists($sfFile)) {
                     try {
                         require_once $sfFile; $sf = new SteadfastAPI();
-                        $resp = $sf->createOrder(['invoice'=>$o['order_number'],'recipient_name'=>$o['customer_name'],'recipient_phone'=>$o['customer_phone'],'recipient_address'=>$o['customer_address'],'cod_amount'=>($o['payment_method']==='cod')?$o['total']:0,'note'=>$o['notes']??'']);
-                        if (!empty($resp['consignment']['consignment_id'])) {
-                            $db->update('orders', ['courier_name'=>'Steadfast','courier_tracking_id'=>$resp['consignment']['tracking_code']??$resp['consignment']['consignment_id'],'courier_consignment_id'=>$resp['consignment']['consignment_id'],'order_status'=>'shipped','updated_at'=>date('Y-m-d H:i:s')], 'id = ?', [$oid]);
+                        $result = $sf->uploadOrder($oid);
+                        if ($result['success']) {
                             $results['success']++;
-                        } else { $results['failed']++; $results['errors'][]="#{$o['order_number']}: ".($resp['message']??'Failed'); }
+                        } else { $results['failed']++; $results['errors'][]="#{$o['order_number']}: ".($result['message']??'Failed'); }
                     } catch(\Throwable $e) { $results['failed']++; $results['errors'][]="#{$o['order_number']}: ".$e->getMessage(); }
                 } else { $results['failed']++; $results['errors'][]="#{$o['order_number']}: Steadfast API not configured"; }
             } elseif (strtolower($courierName) === 'carrybee') {
@@ -105,6 +104,13 @@ try { $db->query("UPDATE orders SET order_status = 'processing' WHERE order_stat
 try { $db->query("ALTER TABLE orders MODIFY COLUMN order_status ENUM('pending','processing','confirmed','shipped','delivered','cancelled','returned','on_hold','no_response','good_but_no_response','advance_payment','incomplete','pending_return','pending_cancel','partial_delivered','lost') DEFAULT 'processing'"); } catch(\Throwable $e) {}
 // Add courier_status column for raw courier API status
 try { $db->query("ALTER TABLE orders ADD COLUMN courier_status VARCHAR(100) DEFAULT NULL AFTER courier_tracking_id"); } catch(\Throwable $e) {}
+try { $db->query("ALTER TABLE orders ADD COLUMN courier_tracking_message TEXT DEFAULT NULL AFTER courier_status"); } catch(\Throwable $e) {}
+try { $db->query("ALTER TABLE orders ADD COLUMN courier_delivery_charge DECIMAL(10,2) DEFAULT NULL AFTER courier_tracking_message"); } catch(\Throwable $e) {}
+try { $db->query("ALTER TABLE orders ADD COLUMN courier_cod_amount DECIMAL(10,2) DEFAULT NULL AFTER courier_delivery_charge"); } catch(\Throwable $e) {}
+try { $db->query("ALTER TABLE orders ADD COLUMN courier_uploaded_at DATETIME DEFAULT NULL AFTER courier_cod_amount"); } catch(\Throwable $e) {}
+try { $db->query("CREATE TABLE IF NOT EXISTS courier_webhook_log (id INT AUTO_INCREMENT PRIMARY KEY, courier VARCHAR(50), payload TEXT, result VARCHAR(255), ip_address VARCHAR(45), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, INDEX(courier), INDEX(created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch(\Throwable $e) {}
+try { $db->query("ALTER TABLE orders ADD COLUMN pathao_consignment_id VARCHAR(100) DEFAULT NULL AFTER courier_consignment_id"); } catch(\Throwable $e) {}
+try { $db->query("ALTER TABLE orders ADD INDEX idx_pathao_cid (pathao_consignment_id)"); } catch(\Throwable $e) {}
 try { $db->query("ALTER TABLE orders ADD COLUMN is_preorder TINYINT(1) DEFAULT 0 AFTER is_fake"); } catch(\Throwable $e) {}
 try { $db->query("ALTER TABLE orders ADD COLUMN advance_amount DECIMAL(12,2) DEFAULT 0 AFTER discount_amount"); } catch(\Throwable $e) {}
 try { $db->query("ALTER TABLE orders ADD COLUMN advance_amount DECIMAL(12,2) DEFAULT 0 AFTER discount_amount"); } catch(\Throwable $e) {}
@@ -285,6 +291,7 @@ require_once __DIR__ . '/../includes/header.php';
         <a href="<?= adminUrl('pages/order-add.php') ?>" class="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-700">⊕ New</a>
         <button type="button" onclick="document.getElementById('advFilters').classList.toggle('hidden')" class="border text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">🔍 Filters</button>
         <div class="relative" id="actionsWrap">
+            <button type="button" onclick="fcCheck('')" class="bg-blue-50 text-blue-600 border border-blue-200 px-3 py-2 rounded-lg text-sm hover:bg-blue-100 font-medium">🔍 Check Customer</button>
             <button type="button" onclick="document.getElementById('actionsMenu').classList.toggle('hidden')" class="border text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">⋮ Actions</button>
             <div id="actionsMenu" class="hidden absolute right-0 top-full mt-1 w-64 bg-white rounded-xl shadow-2xl border z-50 py-1">
                 <div class="px-3 py-1.5 flex items-center justify-between"><span id="selC" class="text-xs text-gray-500">0 selected</span><button type="button" onclick="document.getElementById('selectAll').checked=true;toggleAll(document.getElementById('selectAll'))" class="text-xs text-blue-600">✓ Select All</button></div><hr class="my-1">
@@ -383,6 +390,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="flex items-center gap-1.5 mt-0.5">
                 <span class="text-xs text-gray-500"><?= e($order['customer_phone']) ?></span>
                 <span class="font-bold text-[10px] <?= $rC ?>"><?= $sr['rate'] ?>%</span>
+                <span class="text-blue-500 cursor-pointer hover:text-blue-700" onclick="fcCheck('<?= $ph ?>')" title="Check courier history"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></span>
                 <a href="tel:<?= $ph ?>" class="text-green-500 hover:text-green-700"><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg></a>
                 <a href="https://wa.me/88<?= $ph ?>" target="_blank" class="text-green-600"><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg></a>
             </div>
@@ -421,10 +429,37 @@ require_once __DIR__ . '/../includes/header.php';
         <button onclick="addTag(<?= $order['id'] ?>)" class="text-[10px] text-blue-400 hover:text-blue-600 mt-0.5">+tag</button>
     </td>
     <td class="px-3 py-2.5">
-        <?php if(!empty($order['courier_consignment_id'])): ?><span class="text-xs text-green-600 font-medium">✓ Pathao</span>
-        <?php elseif(!empty($order['courier_name'])): ?><span class="text-xs text-blue-600"><?= e($order['courier_name']) ?></span>
-        <?php else: ?><span class="text-[10px] text-gray-400">—</span><?php endif; ?>
-        <?php if(!empty($order['courier_status'])): ?><p class="text-[10px] text-gray-400 mt-0.5" title="Courier API status"><?= e($order['courier_status']) ?></p><?php endif; ?>
+        <?php if(!empty($order['courier_consignment_id']) || !empty($order['pathao_consignment_id'])):
+            $__cn = strtolower($order['courier_name'] ?: ($order['shipping_method'] ?? ''));
+            $__cid = $order['courier_consignment_id'] ?: ($order['pathao_consignment_id'] ?? '');
+            $__tid = $order['courier_tracking_id'] ?: $__cid;
+            if (strpos($__cn, 'steadfast') !== false) {
+                $__link = 'https://portal.steadfast.com.bd/find-consignment?consignment_id=' . urlencode($__cid);
+                $__badge = 'text-green-600'; $__icon = '📦';
+            } elseif (strpos($__cn, 'pathao') !== false) {
+                $__link = 'https://merchant.pathao.com/courier/consignments/' . urlencode($__cid);
+                $__badge = 'text-red-600'; $__icon = '🚀';
+            } else { $__link = '#'; $__badge = 'text-blue-600'; $__icon = '📦'; }
+        ?>
+            <a href="<?= $__link ?>" target="_blank" class="text-xs font-mono <?= $__badge ?> hover:underline font-medium" title="Open in <?= e($order['courier_name'] ?: $order['shipping_method'] ?? '') ?>">
+                <?= $__icon ?> <?= e($__tid) ?>
+            </a>
+            <p class="text-[10px] text-gray-400 mt-0.5"><?= e($order['courier_name'] ?: ($order['shipping_method'] ?? '')) ?></p>
+        <?php elseif(!empty($order['courier_name']) || !empty($order['shipping_method'])): ?>
+            <span class="text-xs text-blue-600"><?= e($order['courier_name'] ?: ($order['shipping_method'] ?? '')) ?></span>
+        <?php else: ?>
+            <span class="text-[10px] text-gray-400">—</span>
+        <?php endif; ?>
+        <?php if(!empty($order['courier_status'])):
+            $__cs = $order['courier_status'];
+            $__csc = 'text-gray-400';
+            if (in_array($__cs, ['delivered','delivered_approval_pending'])) $__csc = 'text-green-600 font-medium';
+            elseif (in_array($__cs, ['cancelled','cancelled_approval_pending'])) $__csc = 'text-red-500';
+            elseif ($__cs === 'hold') $__csc = 'text-yellow-600';
+            elseif ($__cs === 'in_review') $__csc = 'text-purple-500';
+        ?>
+            <p class="text-[10px] <?= $__csc ?> mt-0.5" title="Courier API status">📡 <?= e($__cs) ?></p>
+        <?php endif; ?>
     </td>
     <td class="px-3 py-2.5 text-center">
         <div class="flex items-center gap-1 justify-center">
@@ -510,6 +545,86 @@ function syncCourier(){
         if(d.details?.length){const e=document.getElementById('cErr');e.classList.remove('hidden');e.innerHTML=d.details.slice(0,5).join('<br>')}
         setTimeout(()=>location.reload(),2500);
     }).catch(e=>{document.getElementById('cProgL').textContent='Sync error: '+e.message});
+}
+/* ─── Fraud Check Popup ─── */
+function fcCheck(phone) {
+    if (!phone) { phone = prompt('Enter phone number (01XXXXXXXXX):'); if (!phone) return; }
+    phone = phone.replace(/\D/g, '');
+    if (phone.length < 10) { alert('Invalid phone number'); return; }
+
+    // Create/show modal
+    let m = document.getElementById('fcModal');
+    if (!m) {
+        m = document.createElement('div');
+        m.id = 'fcModal';
+        m.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9998;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.parentElement.style.display='none'">
+            <div style="background:#fff;border-radius:16px;max-width:700px;width:95%;max-height:85vh;overflow-y:auto;box-shadow:0 25px 50px rgba(0,0,0,.25)">
+                <div style="padding:16px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
+                    <div style="display:flex;align-items:center;gap:8px"><span style="font-size:20px">🔍</span><b style="font-size:15px">Customer Fraud Check</b></div>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <input id="fcPhone" type="tel" placeholder="01XXXXXXXXX" style="border:2px solid #e5e7eb;border-radius:8px;padding:6px 12px;width:150px;font-family:monospace;font-size:14px">
+                        <button onclick="fcRun()" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:6px 16px;font-size:13px;cursor:pointer;font-weight:600">Check</button>
+                        <button onclick="this.closest('#fcModal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:#999">✕</button>
+                    </div>
+                </div>
+                <div id="fcBody" style="padding:16px 20px"></div>
+            </div></div>`;
+        document.body.appendChild(m);
+    }
+    m.style.display = 'block';
+    document.getElementById('fcPhone').value = phone;
+    fcRun();
+}
+
+function fcRun() {
+    const phone = document.getElementById('fcPhone').value.trim().replace(/\D/g, '');
+    if (!phone || phone.length < 10) return;
+    const body = document.getElementById('fcBody');
+    body.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af"><div style="font-size:24px;margin-bottom:8px">⏳</div>Checking Pathao + Steadfast + RedX + Local DB...</div>';
+
+    fetch('<?= SITE_URL ?>/api/fraud-checker.php?phone=' + encodeURIComponent(phone))
+    .then(r => r.json())
+    .then(j => {
+        if (!j.success) { body.innerHTML = '<div style="padding:20px;color:#dc2626">❌ ' + (j.error||'Error') + '</div>'; return; }
+
+        const p=j.pathao||{}, s=j.steadfast||{}, r=j.redx||{}, l=j.local||{}, co=j.combined||{};
+        const risk=co.risk||'new';
+        const riskBg={low:'#dcfce7',medium:'#fef9c3',high:'#fee2e2',new:'#dbeafe',blocked:'#fee2e2'}[risk]||'#f3f4f6';
+        const riskTxt={low:'#166534',medium:'#854d0e',high:'#991b1b',new:'#1e40af',blocked:'#991b1b'}[risk]||'#374151';
+
+        function apiCard(name, data, color) {
+            if (data.error) return `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px;flex:1;min-width:140px"><div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px">${name}</div><div style="font-size:11px;color:#ef4444">❌ ${data.error.substring(0,60)}</div></div>`;
+            if (data.show_count===false && data.customer_rating) {
+                const labels={excellent_customer:'⭐ Excellent',good_customer:'✅ Good',moderate_customer:'⚠️ Moderate',risky_customer:'🚫 Risky'};
+                return `<div style="background:${color}11;border:1px solid ${color}33;border-radius:10px;padding:10px;flex:1;min-width:140px"><div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px">${name} ✓</div><div style="font-size:14px;font-weight:700;color:${color}">${labels[data.customer_rating]||data.customer_rating}</div><div style="font-size:10px;color:#9ca3af">Rating only (v2)</div></div>`;
+            }
+            const total=data.total||0, success=data.success||0;
+            const rate=total>0?Math.round(success/total*100):0;
+            return `<div style="background:${color}11;border:1px solid ${color}33;border-radius:10px;padding:10px;flex:1;min-width:140px"><div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px">${name} ✓</div><div style="font-size:18px;font-weight:800;color:${color}">${rate}%</div><div style="font-size:11px;color:#6b7280">✅${success} ❌${(data.cancel||0)} (${total} total)</div></div>`;
+        }
+
+        body.innerHTML = `
+        <div style="background:${riskBg};border-radius:12px;padding:14px 18px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <div><span style="font-size:18px;font-weight:800;color:#1f2937">📱 ${j.phone}</span>
+            ${l.total>0?`<span style="font-size:11px;color:#6b7280;margin-left:8px">${l.total} local orders · ৳${Number(l.total_spent||0).toLocaleString()}</span>`:''}</div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                ${co.pathao_rating?`<span style="background:#f3e8ff;color:#7c3aed;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700">Pathao: ${{excellent_customer:'⭐ Excellent',good_customer:'✅ Good',moderate_customer:'⚠️ Moderate',risky_customer:'🚫 Risky',new_customer:'🆕 New'}[co.pathao_rating]||co.pathao_rating}</span>`:''}
+                <span style="background:${riskBg};color:${riskTxt};padding:4px 14px;border-radius:20px;font-size:12px;font-weight:800;border:2px solid ${riskTxt}33">${co.risk_label||'Unknown'}</span>
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+            ${apiCard('Pathao',p,'#3b82f6')} ${apiCard('Steadfast',s,'#8b5cf6')} ${apiCard('RedX',r,'#ef4444')}
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px;flex:1;min-width:140px">
+                <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px">Local Record</div>
+                <div style="font-size:11px;color:#6b7280">✅${l.delivered||0} ❌${l.cancelled||0} 🔄${l.returned||0}</div>
+                <div style="font-size:11px;color:#6b7280">৳${Number(l.total_spent||0).toLocaleString()}</div>
+            </div>
+        </div>
+        ${co.rate>0?`<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span style="color:#374151;font-weight:600">Cross-Merchant Success Rate</span><span style="font-weight:800;color:${co.rate>=70?'#16a34a':co.rate>=40?'#ca8a04':'#dc2626'}">${co.rate}%</span></div><div style="width:100%;height:8px;background:#e5e7eb;border-radius:99px;overflow:hidden"><div style="height:100%;border-radius:99px;background:${co.rate>=70?'#22c55e':co.rate>=40?'#eab308':'#ef4444'};width:${co.rate}%"></div></div></div>`:''}
+        ${l.areas?.length?`<div style="display:flex;gap:6px;flex-wrap:wrap">${l.areas.map(a=>`<span style="background:#f3f4f6;padding:3px 10px;border-radius:20px;font-size:11px;border:1px solid #e5e7eb">${a.area} (${a.cnt})</span>`).join('')}</div>`:''}
+        <div style="margin-top:10px;text-align:center"><a href="<?= adminUrl('pages/courier.php?tab=customer_check') ?>" target="_blank" style="color:#3b82f6;font-size:12px;text-decoration:none">Open full Customer Verify →</a></div>`;
+    })
+    .catch(e => { body.innerHTML = '<div style="padding:20px;color:#dc2626">❌ ' + e.message + '</div>'; });
 }
 </script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

@@ -7,8 +7,6 @@
  * Also usable as a cron job: php /path/to/courier-sync.php
  * Or via URL: https://khatibangla.com/api/courier-sync.php?key=YOUR_CRON_KEY
  */
-require_once __DIR__ . '/../includes/config.php';
-require_once __DIR__ . '/../includes/Database.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 header('Content-Type: application/json');

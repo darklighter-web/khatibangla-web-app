@@ -2,9 +2,12 @@
 /**
  * Courier Lookup API — Fetches REAL data from:
  *   1) Our own DB (per-courier stats)
- *   2) Pathao / Steadfast APIs (live courier status)
+ *   2) Pathao / Steadfast APIs (live courier status via consignment IDs)
  *
  * GET /admin/api/courier-lookup.php?phone=01XXXXXXXXX
+ * 
+ * Groups orders by courier using BOTH courier_name and shipping_method columns
+ * Checks pathao_consignment_id for legacy Pathao orders
  */
 require_once __DIR__ . '/../../includes/session.php';
 require_once __DIR__ . '/../includes/auth.php';
@@ -28,7 +31,8 @@ $phoneLike = '%' . substr($phone, -10) . '%';
 
 /* ─── 1. Our DB orders ─── */
 $orders = $db->fetchAll(
-    "SELECT id, order_number, order_status, courier_name, courier_tracking_id, courier_consignment_id,
+    "SELECT id, order_number, order_status, courier_name, shipping_method, 
+            courier_tracking_id, courier_consignment_id, pathao_consignment_id,
             courier_status, total, created_at
      FROM orders
      WHERE customer_phone LIKE ?
@@ -37,13 +41,17 @@ $orders = $db->fetchAll(
     [$phoneLike]
 );
 
-$courierOrders = ['Pathao' => [], 'Steadfast' => [], 'CarryBee' => [], 'Other' => []];
+/* ─── Group orders by courier (check BOTH courier_name and shipping_method) ─── */
+$courierOrders = ['Pathao' => [], 'Steadfast' => [], 'RedX' => [], 'Other' => []];
 foreach ($orders as $o) {
-    $cn = $o['courier_name'] ?? '';
-    if (stripos($cn, 'pathao') !== false)       $courierOrders['Pathao'][] = $o;
-    elseif (stripos($cn, 'steadfast') !== false) $courierOrders['Steadfast'][] = $o;
-    elseif (stripos($cn, 'carrybee') !== false)  $courierOrders['CarryBee'][] = $o;
-    else                                         $courierOrders['Other'][] = $o;
+    $cn = strtolower($o['courier_name'] ?? '');
+    $sm = strtolower($o['shipping_method'] ?? '');
+    $combined = $cn . ' ' . $sm;
+    
+    if (strpos($combined, 'pathao') !== false)       $courierOrders['Pathao'][] = $o;
+    elseif (strpos($combined, 'steadfast') !== false) $courierOrders['Steadfast'][] = $o;
+    elseif (strpos($combined, 'redx') !== false)     $courierOrders['RedX'][] = $o;
+    else                                              $courierOrders['Other'][] = $o;
 }
 
 /* ─── Status mappings ─── */
@@ -60,6 +68,40 @@ $sf = __DIR__ . '/../../api/steadfast.php';
 if (file_exists($pf)) { try { require_once $pf; $pathaoApi = new PathaoAPI(); } catch (\Throwable $e) {} }
 if (file_exists($sf)) { try { require_once $sf; $sfApi = new SteadfastAPI(); } catch (\Throwable $e) {} }
 
+/* ─── Fraud Check APIs (cross-merchant data) ─── */
+$fraudData = ['pathao' => null, 'steadfast' => null, 'redx' => null, 'errors' => []];
+if ($pathaoApi) {
+    // Pathao merchant portal fraud check
+    try {
+        $pFraud = $pathaoApi->fraudCheckPathao($phone);
+        if ($pFraud && !isset($pFraud['error'])) {
+            $fraudData['pathao'] = $pFraud;
+        } else {
+            $fraudData['errors'][] = 'Pathao: ' . ($pFraud['error'] ?? 'empty');
+        }
+    } catch (\Throwable $e) { $fraudData['errors'][] = 'Pathao: ' . $e->getMessage(); }
+
+    // Steadfast portal fraud check
+    try {
+        $sFraud = $pathaoApi->fraudCheckSteadfast($phone);
+        if ($sFraud && !isset($sFraud['error'])) {
+            $fraudData['steadfast'] = $sFraud;
+        } else {
+            $fraudData['errors'][] = 'Steadfast: ' . ($sFraud['error'] ?? 'empty');
+        }
+    } catch (\Throwable $e) { $fraudData['errors'][] = 'Steadfast: ' . $e->getMessage(); }
+
+    // RedX API fraud check
+    try {
+        $rFraud = $pathaoApi->fraudCheckRedx($phone);
+        if ($rFraud && !isset($rFraud['error'])) {
+            $fraudData['redx'] = $rFraud;
+        } else {
+            $fraudData['errors'][] = 'RedX: ' . ($rFraud['error'] ?? 'empty');
+        }
+    } catch (\Throwable $e) { $fraudData['errors'][] = 'RedX: ' . $e->getMessage(); }
+}
+
 /* Helper: classify status */
 function classifyStatus($status) {
     global $pathaoDelivered, $pathaoReturn, $pathaoCancelled, $sfDelivered, $sfCancelled;
@@ -69,11 +111,16 @@ function classifyStatus($status) {
     return 'pending';
 }
 
-/* ─── 2. Query courier APIs for live status ─── */
+/* ─── 2. Process orders — query courier APIs for live status ─── */
 function processOrders($orders, $api, $type, $db) {
     $stats = ['total' => count($orders), 'success' => 0, 'cancelled' => 0, 'returned' => 0, 'pending' => 0, 'rate' => 0, 'api_checked' => 0, 'details' => []];
     foreach ($orders as $o) {
-        $cid = $o['courier_consignment_id'] ?: $o['courier_tracking_id'];
+        // For Pathao: check both courier_consignment_id AND pathao_consignment_id
+        if ($type === 'pathao') {
+            $cid = $o['pathao_consignment_id'] ?: $o['courier_consignment_id'] ?: $o['courier_tracking_id'];
+        } else {
+            $cid = $o['courier_consignment_id'] ?: $o['courier_tracking_id'];
+        }
         $apiStatus = null;
 
         if ($cid && $api) {
@@ -89,14 +136,16 @@ function processOrders($orders, $api, $type, $db) {
                         $apiStatus = $resp['delivery_status'] ?? null;
                     }
                     $stats['api_checked']++;
+                    // Update our DB with live status if different
                     if ($apiStatus && $apiStatus !== $o['courier_status']) {
-                        try { $db->update('orders', ['courier_status' => $apiStatus], 'id = ?', [$o['id']]); } catch (\Throwable $e) {}
+                        try { $db->update('orders', ['courier_status' => $apiStatus, 'updated_at' => date('Y-m-d H:i:s')], 'id = ?', [$o['id']]); } catch (\Throwable $e) {}
                     }
                 } catch (\Throwable $e) {}
-                usleep(100000);
+                usleep(100000); // 100ms throttle
             }
         }
 
+        // Use API status if available, otherwise fall back to our DB
         $status = $apiStatus ?: $o['courier_status'] ?: $o['order_status'];
         $cls = classifyStatus($status);
         if ($cls === 'delivered') $stats['success']++;
@@ -114,23 +163,74 @@ $result = [];
 $result['Pathao']    = processOrders($courierOrders['Pathao'], $pathaoApi, 'pathao', $db);
 $result['Steadfast'] = processOrders($courierOrders['Steadfast'], $sfApi, 'steadfast', $db);
 
-// CarryBee: local only
-$cbStats = ['total' => count($courierOrders['CarryBee']), 'success' => 0, 'cancelled' => 0, 'returned' => 0, 'pending' => 0, 'rate' => 0, 'api_checked' => 0];
-foreach ($courierOrders['CarryBee'] as $o) {
-    $cls = classifyStatus($o['courier_status'] ?: $o['order_status']);
-    if ($cls === 'delivered') $cbStats['success']++;
-    elseif ($cls === 'cancelled') $cbStats['cancelled']++;
-    elseif ($cls === 'returned') $cbStats['returned']++;
-    else $cbStats['pending']++;
+// Merge fraud check API data into results (cross-merchant counts)
+if ($fraudData['pathao']) {
+    $apiTotal   = intval($fraudData['pathao']['total_delivery'] ?? 0);
+    $apiSuccess = intval($fraudData['pathao']['successful_delivery'] ?? 0);
+    $apiCancel  = $apiTotal - $apiSuccess;
+    $result['Pathao']['fraud_api'] = $fraudData['pathao'];
+    if ($apiTotal > $result['Pathao']['total']) {
+        $result['Pathao']['total']     = $apiTotal;
+        $result['Pathao']['success']   = $apiSuccess;
+        $result['Pathao']['cancelled'] = $apiCancel;
+        $result['Pathao']['rate']      = $apiTotal > 0 ? round(($apiSuccess / $apiTotal) * 100) : 0;
+        $result['Pathao']['data_source'] = 'merchant_portal';
+    }
+    $result['Pathao']['api_checked'] = max($result['Pathao']['api_checked'], 1);
 }
-if ($cbStats['total'] > 0) $cbStats['rate'] = round(($cbStats['success'] / $cbStats['total']) * 100);
-$result['CarryBee'] = $cbStats;
+if ($fraudData['steadfast']) {
+    $apiDelivered = intval($fraudData['steadfast']['total_delivered'] ?? 0);
+    $apiCancelled = intval($fraudData['steadfast']['total_cancelled'] ?? 0);
+    $apiTotal     = $apiDelivered + $apiCancelled;
+    $result['Steadfast']['fraud_api'] = $fraudData['steadfast'];
+    if ($apiTotal > $result['Steadfast']['total']) {
+        $result['Steadfast']['total']     = $apiTotal;
+        $result['Steadfast']['success']   = $apiDelivered;
+        $result['Steadfast']['cancelled'] = $apiCancelled;
+        $result['Steadfast']['rate']      = $apiTotal > 0 ? round(($apiDelivered / $apiTotal) * 100) : 0;
+        $result['Steadfast']['data_source'] = 'steadfast_portal';
+    }
+    $result['Steadfast']['api_checked'] = max($result['Steadfast']['api_checked'], 1);
+}
+
+// RedX: local + fraud API
+$rxStats = ['total' => count($courierOrders['RedX']), 'success' => 0, 'cancelled' => 0, 'returned' => 0, 'pending' => 0, 'rate' => 0, 'api_checked' => 0];
+foreach ($courierOrders['RedX'] as $o) {
+    $cls = classifyStatus($o['courier_status'] ?: $o['order_status']);
+    if ($cls === 'delivered') $rxStats['success']++;
+    elseif ($cls === 'cancelled') $rxStats['cancelled']++;
+    elseif ($cls === 'returned') $rxStats['returned']++;
+    else $rxStats['pending']++;
+}
+if ($rxStats['total'] > 0) $rxStats['rate'] = round(($rxStats['success'] / $rxStats['total']) * 100);
+if ($fraudData['redx']) {
+    $apiDelivered = intval($fraudData['redx']['deliveredParcels'] ?? 0);
+    $apiTotal     = intval($fraudData['redx']['totalParcels'] ?? 0);
+    $apiCancel    = $apiTotal - $apiDelivered;
+    $rxStats['fraud_api'] = $fraudData['redx'];
+    if ($apiTotal > $rxStats['total']) {
+        $rxStats['total']     = $apiTotal;
+        $rxStats['success']   = $apiDelivered;
+        $rxStats['cancelled'] = $apiCancel;
+        $rxStats['rate']      = $apiTotal > 0 ? round(($apiDelivered / $apiTotal) * 100) : 0;
+        $rxStats['data_source'] = 'redx_api';
+    }
+    $rxStats['api_checked'] = 1;
+}
+$result['RedX'] = $rxStats;
 
 /* ─── Overall from OUR data ─── */
 $allTotal     = array_sum(array_column($result, 'total')) + count($courierOrders['Other']);
 $allSuccess   = array_sum(array_column($result, 'success'));
 $allCancelled = array_sum(array_column($result, 'cancelled'));
 $allReturned  = array_sum(array_column($result, 'returned'));
+// Also count "Other" orders by our DB status
+foreach ($courierOrders['Other'] as $o) {
+    $cls = classifyStatus($o['courier_status'] ?: $o['order_status']);
+    if ($cls === 'delivered') $allSuccess++;
+    elseif ($cls === 'cancelled') $allCancelled++;
+    elseif ($cls === 'returned') $allReturned++;
+}
 $overallRate  = $allTotal > 0 ? round(($allSuccess / $allTotal) * 100) : 0;
 
 /* ─── Our Record ─── */
@@ -163,6 +263,7 @@ echo json_encode([
     ],
     'couriers'      => $result,
     'our_record'    => $ourRecord,
+    'fraud_data'    => $fraudData,
     'api_available' => [
         'pathao'    => $pathaoApi && method_exists($pathaoApi, 'isConfigured') && $pathaoApi->isConfigured(),
         'steadfast' => $sfApi && method_exists($sfApi, 'isConfigured') && $sfApi->isConfigured(),

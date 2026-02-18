@@ -100,8 +100,98 @@ try {
             $phone = $_GET['phone'] ?? $_POST['phone'] ?? '';
             $phone = preg_replace('/[^0-9+]/', '', $phone);
             if (empty($phone)) { echo json_encode(['success' => false, 'message' => 'Phone required']); break; }
-            $profile = $pathao->getCustomerProfile($phone);
-            echo json_encode(['success' => true, 'data' => $profile]);
+            
+            // Collect diagnostic info alongside the profile
+            $diag = [
+                'pathao_configured' => $pathao->isConfigured(),
+                'pathao_connected'  => $pathao->isConnected(),
+                'pathao_api_called' => false,
+                'pathao_api_result' => null,
+                'steadfast_checked' => false,
+                'local_db_queried'  => false,
+                'errors' => [],
+            ];
+            
+            // Quick test: can we reach Pathao API?
+            if ($pathao->isConfigured()) {
+                try {
+                    $token = $pathao->getAccessToken();
+                    $diag['pathao_auth'] = $token ? 'OK' : 'FAILED';
+                } catch (\Throwable $e) {
+                    $diag['pathao_auth'] = 'ERROR: ' . $e->getMessage();
+                    $diag['errors'][] = 'Pathao auth: ' . $e->getMessage();
+                }
+                
+                // Try direct customer-check API call
+                try {
+                    $rawCheck = $pathao->checkCustomerPhone($phone);
+                    $diag['pathao_api_called'] = true;
+                    $diag['pathao_api_result'] = $rawCheck;
+                } catch (\Throwable $e) {
+                    $diag['errors'][] = 'Pathao customer-check: ' . $e->getMessage();
+                }
+            } else {
+                $diag['errors'][] = 'Pathao API credentials not configured — go to Courier → Pathao tab to set up';
+            }
+            
+            // Check Steadfast
+            try {
+                $sfFile = __DIR__ . '/steadfast.php';
+                if (file_exists($sfFile)) {
+                    require_once $sfFile;
+                    $sfTest = new \SteadfastAPI();
+                    $diag['steadfast_configured'] = $sfTest->isConfigured();
+                } else {
+                    $diag['steadfast_configured'] = false;
+                    $diag['errors'][] = 'Steadfast API file not found';
+                }
+            } catch (\Throwable $e) {
+                $diag['steadfast_configured'] = false;
+            }
+            
+            // Now get the full profile
+            try {
+                $profile = $pathao->getCustomerProfile($phone);
+                $diag['local_db_queried'] = true;
+                $diag['local_orders_found'] = $profile['local_orders'] ?? 0;
+            } catch (\Throwable $e) {
+                $profile = ['total_orders' => 0, 'delivered' => 0, 'cancelled' => 0, 'returned' => 0, 'success_rate' => 0, 'risk_level' => 'new', 'risk_label' => 'New Customer', 'couriers' => [], 'api_notes' => ['PROFILE ERROR: ' . $e->getMessage()]];
+                $diag['errors'][] = 'Profile build: ' . $e->getMessage();
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'data'    => $profile,
+                'diag'    => $diag,
+            ]);
+            break;
+
+        // Debug endpoint — shows raw API responses for troubleshooting
+        case 'debug_customer_check':
+            $phone = $_GET['phone'] ?? $_POST['phone'] ?? '';
+            $phone = preg_replace('/[^0-9+]/', '', $phone);
+            if (empty($phone)) { echo json_encode(['success' => false, 'message' => 'Phone required']); break; }
+            $debug = ['phone' => $phone, 'is_configured' => $pathao->isConfigured(), 'is_connected' => $pathao->isConnected()];
+            
+            // Test auth
+            try { $token = $pathao->getAccessToken(); $debug['auth'] = $token ? 'OK' : 'FAILED'; }
+            catch (\Throwable $e) { $debug['auth'] = 'ERROR: ' . $e->getMessage(); }
+            
+            // Raw customer-check call
+            try {
+                $rawResp = $pathao->checkCustomerPhone($phone);
+                $debug['customer_check'] = ['response' => $rawResp, 'response_keys' => $rawResp ? array_keys($rawResp) : null];
+                if (isset($rawResp['data'])) {
+                    $debug['customer_check']['data_keys'] = is_array($rawResp['data']) ? array_keys($rawResp['data']) : gettype($rawResp['data']);
+                    $debug['customer_check']['data_content'] = $rawResp['data'];
+                }
+            } catch (\Throwable $e) { $debug['customer_check'] = ['error' => $e->getMessage()]; }
+            
+            // Full profile
+            try { $debug['profile'] = $pathao->getCustomerProfile($phone); }
+            catch (\Throwable $e) { $debug['profile_error'] = $e->getMessage(); }
+            
+            echo json_encode(['success' => true, 'debug' => $debug], JSON_PRETTY_PRINT);
             break;
 
         case 'verify_address':
@@ -181,6 +271,25 @@ try {
                 }
             }
             echo json_encode(['success' => true]);
+            break;
+
+        case 'save_fraud_config':
+            $data = $__jsonInput;
+            $db = Database::getInstance();
+            $fields = [
+                'steadfast_merchant_email'    => 'Steadfast Merchant Email',
+                'steadfast_merchant_password' => 'Steadfast Merchant Password',
+                'redx_phone'                  => 'RedX Phone',
+                'redx_password'               => 'RedX Password',
+            ];
+            foreach ($fields as $k => $label) {
+                if (isset($data[$k])) {
+                    $exists = $db->fetch("SELECT id FROM site_settings WHERE setting_key = ?", [$k]);
+                    if ($exists) { $db->update('site_settings', ['setting_value' => $data[$k]], 'setting_key = ?', [$k]); }
+                    else { $db->insert('site_settings', ['setting_key'=>$k,'setting_value'=>$data[$k],'setting_type'=>'text','setting_group'=>'courier','label'=>$label]); }
+                }
+            }
+            echo json_encode(['success' => true, 'message' => 'Fraud check credentials saved']);
             break;
 
         default:

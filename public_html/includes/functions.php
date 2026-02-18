@@ -587,6 +587,32 @@ function createOrder($data) {
     
     $total = $subtotal + $shippingCost - $discount;
     
+    // ── PROGRESS BAR REWARDS (server-side validation) ──
+    $pbDiscount = 0;
+    $requestedPbDiscount = floatval($data['progress_bar_discount'] ?? 0);
+    try {
+        $activeBar = $db->fetch("SELECT * FROM checkout_progress_bars WHERE is_active = 1 LIMIT 1");
+        if ($activeBar) {
+            $tiers = json_decode($activeBar['tiers'] ?? '[]', true) ?: [];
+            $serverDiscount = 0;
+            foreach ($tiers as $t) {
+                if ($subtotal >= floatval($t['min_amount'] ?? 0)) {
+                    if (($t['reward_type'] ?? '') === 'free_shipping') {
+                        $shippingCost = 0;
+                    } elseif (($t['reward_type'] ?? '') === 'discount_fixed') {
+                        $serverDiscount += floatval($t['reward_value'] ?? 0);
+                    } elseif (($t['reward_type'] ?? '') === 'discount_percent') {
+                        $serverDiscount += round($subtotal * floatval($t['reward_value'] ?? 0) / 100);
+                    }
+                }
+            }
+            $pbDiscount = min($serverDiscount, $subtotal);
+        }
+    } catch (\Throwable $e) { $pbDiscount = 0; }
+    
+    $discount += $pbDiscount;
+    $total = $subtotal + $shippingCost - $discount;
+    
     // ── STORE CREDIT (credit → TK conversion) ──
     // Entire block wrapped in try-catch so credit issues never prevent order placement
     $storeCreditUsed = 0;

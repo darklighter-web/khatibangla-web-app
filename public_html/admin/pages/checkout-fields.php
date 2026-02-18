@@ -8,6 +8,7 @@ $db = Database::getInstance();
 // Default fields
 $defaultFields = [
     ['key'=>'cart_summary','label'=>'পণ্যের তালিকা','label_en'=>'Product Summary','type'=>'system','enabled'=>true,'required'=>false,'placeholder'=>'','width'=>'full','icon'=>'fa-shopping-bag'],
+    ['key'=>'progress_bar','label'=>'প্রোগ্রেস বার অফার','label_en'=>'Progress Bar Offer','type'=>'system','enabled'=>true,'required'=>false,'placeholder'=>'','width'=>'full','icon'=>'fa-gift'],
     ['key'=>'name','label'=>'আপনার নাম','label_en'=>'Customer Name','type'=>'text','enabled'=>true,'required'=>true,'placeholder'=>'সম্পূর্ণ নাম লিখুন','width'=>'full','icon'=>'fa-user'],
     ['key'=>'phone','label'=>'মোবাইল নম্বর','label_en'=>'Mobile Number','type'=>'tel','enabled'=>true,'required'=>true,'placeholder'=>'01XXXXXXXXX','width'=>'full','icon'=>'fa-phone'],
     ['key'=>'email','label'=>'ইমেইল','label_en'=>'Email Address','type'=>'email','enabled'=>false,'required'=>false,'placeholder'=>'your@email.com','width'=>'full','icon'=>'fa-envelope'],

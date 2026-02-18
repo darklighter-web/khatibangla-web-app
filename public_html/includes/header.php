@@ -446,6 +446,29 @@ if ($headerBgStyle === 'glass') {
                 <?php endif; ?>
                 <?php endif; ?>
                 
+                <!-- Review Notification -->
+                <?php if (isCustomerLoggedIn() && getSetting('reviews_enabled', '1') === '1'):
+                    $__revCustId = getCustomerId();
+                    $__pendingRevCount = 0;
+                    try {
+                        $__prvDb = Database::getInstance();
+                        $__prv = $__prvDb->fetch(
+                            "SELECT COUNT(DISTINCT oi.product_id) as cnt FROM orders o 
+                             JOIN order_items oi ON oi.order_id = o.id
+                             WHERE (o.customer_id = ? OR o.customer_phone = (SELECT phone FROM customers WHERE id = ?))
+                             AND o.order_status = 'delivered'
+                             AND oi.product_id NOT IN (SELECT product_id FROM product_reviews WHERE customer_id = ? AND is_dummy = 0)",
+                            [$__revCustId, $__revCustId, $__revCustId]
+                        );
+                        $__pendingRevCount = intval($__prv['cnt'] ?? 0);
+                    } catch (\Throwable $e) {}
+                    if ($__pendingRevCount > 0): ?>
+                <a href="<?= url('account?tab=reviews') ?>" class="relative p-2 rounded-lg hover:bg-gray-100 hidden sm:block" title="রিভিউ দিন — <?= $__pendingRevCount ?>টি পণ্যে রিভিউ দেওয়া বাকি">
+                    <i class="fas fa-star text-lg text-yellow-500"></i>
+                    <span class="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center text-[10px] font-bold rounded-full bg-red-500 text-white animate-pulse"><?= $__pendingRevCount ?></span>
+                </a>
+                <?php endif; endif; ?>
+                
                 <!-- Wishlist -->
                 <?php if ($hShowWishlist && isCustomerLoggedIn()): ?>
                 <a href="<?= url('account?tab=wishlist') ?>" class="relative p-2 rounded-lg hover:bg-gray-100 hidden sm:block" title="উইশলিস্ট">
@@ -613,6 +636,16 @@ if ($headerBgStyle === 'glass') {
             <a href="<?= url('account?tab=wishlist') ?>" class="flex items-center gap-3 py-2 text-gray-600">
                 <i class="far fa-heart w-5 text-center"></i> উইশলিস্ট
             </a>
+            <?php
+            // Review notification in mobile menu
+            if (getSetting('reviews_enabled', '1') === '1') {
+                $__mRevCount = $__pendingRevCount ?? 0;
+                if ($__mRevCount > 0): ?>
+            <a href="<?= url('account?tab=reviews') ?>" class="flex items-center gap-3 py-2 text-yellow-600 font-medium">
+                <i class="fas fa-star w-5 text-center"></i> রিভিউ দিন
+                <span class="ml-auto text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full"><?= $__mRevCount ?></span>
+            </a>
+            <?php endif; } ?>
             <a href="<?= url('track-order') ?>" class="flex items-center gap-3 py-2 text-gray-600">
                 <i class="fas fa-truck w-5 text-center"></i> অর্ডার ট্র্যাক
             </a>

@@ -29,6 +29,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $db->delete('incomplete_orders', 'id = ?', [$id]);
         redirect(adminUrl('pages/incomplete-orders.php?msg=deleted'));
     }
+    if ($act === 'bulk_delete') {
+        $ids = $_POST['ids'] ?? [];
+        $deleted = 0;
+        foreach ($ids as $did) {
+            $did = intval($did);
+            if ($did > 0) { try { $db->delete('incomplete_orders', 'id = ?', [$did]); $deleted++; } catch (\Throwable $e) {} }
+        }
+        redirect(adminUrl('pages/incomplete-orders.php?filter=' . urlencode($filter ?? 'active') . '&msg=bulk_deleted&count=' . $deleted));
+    }
+    if ($act === 'delete_all_active') {
+        try { $deleted = $db->fetch("SELECT COUNT(*) as c FROM incomplete_orders WHERE {$recCol} = 0")['c'] ?? 0;
+            $db->query("DELETE FROM incomplete_orders WHERE {$recCol} = 0");
+        } catch (\Throwable $e) { $deleted = 0; }
+        redirect(adminUrl('pages/incomplete-orders.php?msg=bulk_deleted&count=' . $deleted));
+    }
     
     // ── Convert incomplete → real confirmed order ──
     if ($act === 'convert_to_order' && $id) {
@@ -131,7 +146,7 @@ require_once __DIR__ . '/../includes/header.php';
 
 <?php if (isset($_GET['msg'])): $isErr = in_array($_GET['msg'],['no_phone','empty_cart']); ?>
 <div class="bg-<?= $isErr?'red':'green' ?>-50 border border-<?= $isErr?'red':'green' ?>-200 text-<?= $isErr?'red':'green' ?>-700 px-4 py-3 rounded-lg mb-4 text-sm">
-    <?= ['recovered'=>'✓ Marked as recovered.','followup'=>'✓ Follow-up logged.','deleted'=>'✓ Deleted.','no_phone'=>'✗ Cannot convert: no phone number.','empty_cart'=>'✗ Cannot convert: cart is empty.'][$_GET['msg']] ?? '✓ Done.' ?>
+    <?= ['recovered'=>'✓ Marked as recovered.','followup'=>'✓ Follow-up logged.','deleted'=>'✓ Deleted.','bulk_deleted'=>'✓ Deleted '.intval($_GET['count']??0).' incomplete orders.','no_phone'=>'✗ Cannot convert: no phone number.','empty_cart'=>'✗ Cannot convert: cart is empty.'][$_GET['msg']] ?? '✓ Done.' ?>
 </div>
 <?php endif; ?>
 
@@ -146,6 +161,12 @@ require_once __DIR__ . '/../includes/header.php';
     <a href="?filter=active" class="px-4 py-2 rounded-lg text-sm font-medium <?= $filter==='active'?'bg-red-600 text-white':'bg-white border text-gray-600 hover:bg-gray-50' ?>">🛒 Active (<?= $sActive ?>)</a>
     <a href="?filter=recovered" class="px-4 py-2 rounded-lg text-sm font-medium <?= $filter==='recovered'?'bg-green-600 text-white':'bg-white border text-gray-600 hover:bg-gray-50' ?>">✅ Recovered (<?= $sRecovered ?>)</a>
     <a href="?filter=all" class="px-4 py-2 rounded-lg text-sm font-medium <?= $filter==='all'?'bg-blue-600 text-white':'bg-white border text-gray-600 hover:bg-gray-50' ?>">All</a>
+    <?php if ($sActive > 0): ?>
+    <form method="POST" class="inline" onsubmit="return confirm('⚠️ Delete ALL <?= $sActive ?> active incomplete orders?\n\nThis cannot be undone.')">
+        <input type="hidden" name="action" value="delete_all_active">
+        <button class="px-4 py-2 rounded-lg text-sm font-medium bg-red-50 text-red-600 border border-red-200 hover:bg-red-100">🗑 Delete All Active (<?= $sActive ?>)</button>
+    </form>
+    <?php endif; ?>
     <a href="<?= adminUrl('pages/order-management.php') ?>" class="px-4 py-2 rounded-lg text-sm font-medium bg-white border text-gray-600 hover:bg-gray-50 ml-auto">← Back to Orders</a>
     <form class="flex gap-2"><input type="hidden" name="filter" value="<?= e($filter) ?>">
         <input type="text" name="search" value="<?= e($search) ?>" placeholder="Search phone/name..." class="px-3 py-2 border rounded-lg text-sm w-48">
@@ -153,9 +174,20 @@ require_once __DIR__ . '/../includes/header.php';
     </form>
 </div>
 
+<!-- Bulk action bar (hidden until selections made) -->
+<div id="bulkBar" class="hidden sticky top-0 z-40 bg-red-600 text-white px-4 py-3 rounded-xl mb-3 flex items-center justify-between shadow-lg">
+    <div class="flex items-center gap-3">
+        <span class="font-semibold text-sm"><span id="selectedCount">0</span> selected</span>
+        <button onclick="selectAllVisible()" class="text-xs bg-white/20 px-2.5 py-1 rounded-lg hover:bg-white/30">Select All</button>
+        <button onclick="deselectAll()" class="text-xs bg-white/20 px-2.5 py-1 rounded-lg hover:bg-white/30">Deselect</button>
+    </div>
+    <button onclick="bulkDelete()" class="bg-white text-red-600 px-4 py-1.5 rounded-lg text-sm font-bold hover:bg-red-50">🗑 Delete Selected</button>
+</div>
+
 <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
 <div class="overflow-x-auto"><table class="w-full text-sm">
 <thead class="bg-gray-50"><tr>
+    <th class="px-3 py-3 w-10"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll(this.checked)" class="w-4 h-4 accent-red-600 cursor-pointer"></th>
     <th class="px-4 py-3 text-left text-xs font-medium text-gray-600">Date</th>
     <th class="px-4 py-3 text-left text-xs font-medium text-gray-600">Customer</th>
     <th class="px-4 py-3 text-left text-xs font-medium text-gray-600">Cart Items</th>
@@ -172,6 +204,7 @@ require_once __DIR__ . '/../includes/header.php';
     $ph = preg_replace('/[^0-9]/', '', $inc['customer_phone'] ?? '');
 ?>
 <tr class="hover:bg-gray-50 <?= $isRec?'bg-green-50/30':'' ?>">
+    <td class="px-3 py-3"><input type="checkbox" class="row-cb w-4 h-4 accent-red-600 cursor-pointer" value="<?= $inc['id'] ?>" onchange="updateBulkBar()"></td>
     <td class="px-4 py-3 whitespace-nowrap"><p class="text-xs text-gray-700"><?= date('d M Y', strtotime($inc['created_at'])) ?></p><p class="text-xs text-gray-400"><?= date('h:i a', strtotime($inc['created_at'])) ?></p></td>
     <td class="px-4 py-3">
         <?php if (!empty($inc['customer_name'])): ?><p class="text-sm font-medium"><?= e($inc['customer_name']) ?></p><?php endif; ?>
@@ -218,7 +251,7 @@ require_once __DIR__ . '/../includes/header.php';
     </td>
 </tr>
 <?php endforeach; ?>
-<?php if (empty($incompletes)): ?><tr><td colspan="8" class="px-4 py-12 text-center text-gray-400"><div class="text-4xl mb-2">🛒</div><p>No incomplete orders found.</p></td></tr><?php endif; ?>
+<?php if (empty($incompletes)): ?><tr><td colspan="9" class="px-4 py-12 text-center text-gray-400"><div class="text-4xl mb-2">🛒</div><p>No incomplete orders found.</p></td></tr><?php endif; ?>
 </tbody></table></div></div>
 
 <!-- ═══ DETAILS MODAL ═══ -->
@@ -318,6 +351,63 @@ function convertOrder(inc, cart){
     document.getElementById('conv_items').innerHTML=h;
     document.getElementById('conv_total').textContent='৳'+sub.toLocaleString();
     document.getElementById('convertModal').classList.remove('hidden');
+}
+
+// ========== BULK SELECT & DELETE ==========
+function getChecked() { return document.querySelectorAll('.row-cb:checked'); }
+
+function updateBulkBar() {
+    var checked = getChecked();
+    var bar = document.getElementById('bulkBar');
+    var cnt = document.getElementById('selectedCount');
+    if (checked.length > 0) {
+        bar.classList.remove('hidden');
+        cnt.textContent = checked.length;
+    } else {
+        bar.classList.add('hidden');
+    }
+    // Sync header checkbox
+    var all = document.querySelectorAll('.row-cb');
+    document.getElementById('selectAllCb').checked = all.length > 0 && checked.length === all.length;
+}
+
+function toggleSelectAll(state) {
+    document.querySelectorAll('.row-cb').forEach(function(cb) { cb.checked = state; });
+    updateBulkBar();
+}
+
+function selectAllVisible() {
+    document.querySelectorAll('.row-cb').forEach(function(cb) { cb.checked = true; });
+    document.getElementById('selectAllCb').checked = true;
+    updateBulkBar();
+}
+
+function deselectAll() {
+    document.querySelectorAll('.row-cb').forEach(function(cb) { cb.checked = false; });
+    document.getElementById('selectAllCb').checked = false;
+    updateBulkBar();
+}
+
+function bulkDelete() {
+    var checked = getChecked();
+    if (checked.length === 0) return;
+    if (!confirm('⚠️ Delete ' + checked.length + ' incomplete order(s)?\n\nThis cannot be undone.')) return;
+    
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.style.display = 'none';
+    
+    var act = document.createElement('input');
+    act.name = 'action'; act.value = 'bulk_delete'; form.appendChild(act);
+    
+    checked.forEach(function(cb) {
+        var inp = document.createElement('input');
+        inp.name = 'ids[]'; inp.value = cb.value;
+        form.appendChild(inp);
+    });
+    
+    document.body.appendChild(form);
+    form.submit();
 }
 </script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
