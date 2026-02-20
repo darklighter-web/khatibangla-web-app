@@ -252,7 +252,7 @@ require_once __DIR__ . '/../includes/header.php';
                         $__ovCid = $order['courier_consignment_id'] ?: ($order['pathao_consignment_id'] ?? '');
                         $__ovTid = $order['courier_tracking_id'] ?: $__ovCid;
                         if (strpos($__ovCn, 'steadfast') !== false) {
-                            $__ovLink = 'https://steadfast.com.bd/user/consignment/' . urlencode($__ovCid);
+                            $__ovLink = 'https://portal.steadfast.com.bd/find-consignment?consignment_id=' . urlencode($__ovCid);
                         } elseif (strpos($__ovCn, 'pathao') !== false) {
                             $__ovLink = 'https://merchant.pathao.com/courier/orders/' . urlencode($__ovCid);
                         } elseif (strpos($__ovCn, 'redx') !== false) {
@@ -350,7 +350,7 @@ require_once __DIR__ . '/../includes/header.php';
         
         // Build portal link
         if ($__isSf && $__hasCid) {
-            $__portalLink = 'https://steadfast.com.bd/user/consignment/' . urlencode($__cid);
+            $__portalLink = 'https://portal.steadfast.com.bd/find-consignment?consignment_id=' . urlencode($__cid);
             $__portalName = 'Steadfast Portal';
             $__trackLink = 'https://steadfast.com.bd/t/' . urlencode($__tid);
         } elseif ($__isPathao && $__hasCid) {
