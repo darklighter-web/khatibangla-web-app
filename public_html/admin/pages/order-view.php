@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $discount     = floatval($_POST['discount_amount'] ?? $order['discount_amount'] ?? 0);
         $advance      = floatval($_POST['advance_amount']  ?? 0);
         $shippingCost = floatval($_POST['shipping_cost']   ?? $order['shipping_cost'] ?? 0);
-        $total        = $subtotal + $shippingCost - $discount;
+        $total        = max(0, $subtotal + $shippingCost - $discount - $advance);
 
         $updateData = [
             'customer_name' => $name, 'customer_phone' => $phone, 'customer_address' => $address,
@@ -72,7 +72,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $db->update('orders', $updateData, 'id = ?', [$id]);
         logActivity(getAdminId(), 'update', 'orders', $id);
-        redirect(adminUrl("pages/order-view.php?id={$id}&msg=" . ($action === 'confirm_order' ? 'confirmed' : 'updated')));
+        if ($action === 'confirm_order') {
+            redirect(adminUrl("pages/order-management.php?status=confirmed&msg=confirmed"));
+        }
+        redirect(adminUrl("pages/order-view.php?id={$id}&msg=updated"));
     }
 
     if ($action === 'update_status') {
@@ -200,10 +203,15 @@ require_once __DIR__ . '/../includes/header.php';
 
             <div class="bg-white border border-gray-200 rounded-lg p-3" id="card-ourrecord">
                 <div class="text-sm font-semibold text-gray-800 mb-1">Our Record</div>
-                <div class="text-xs font-bold text-green-600 mb-1" data-custtype><?= $sr['total']<=1?'New Customer':'Returning Customer' ?></div>
+                <?php if ($sr['total'] <= 1): ?>
+                <div class="text-xs font-bold text-blue-600 mb-1" data-custtype>New Customer</div>
+                <?php endif; ?>
+                <div class="text-[11px] text-gray-500 leading-relaxed" data-ourtotal>Total: <?= $sr['total'] ?></div>
+                <div class="text-[11px] text-gray-500 leading-relaxed" data-ourcancelled>Cancelled: <?= $sr['cancelled'] ?></div>
                 <div class="text-[11px] text-gray-500 leading-relaxed" data-webcancel>Web Order Cancel: <?= $webCancels ?></div>
                 <div class="text-[11px] text-gray-500 leading-relaxed" data-totalspent>Total Spent: ৳<?= number_format($sr['total_spent']??0) ?></div>
-                <button type="button" onclick="fetchCourierData()" id="fillInfoBtn" class="w-full mt-2 py-1.5 bg-emerald-500 text-white rounded-md text-xs font-semibold hover:bg-emerald-600 transition">Fill Info</button>
+                <button type="button" onclick="fetchCourierData()" id="fillInfoBtn" class="w-full mt-2 py-1.5 bg-gray-200 text-gray-700 rounded-md text-xs font-semibold hover:bg-gray-300 transition">Fill</button>
+                <div class="h-1 bg-gray-100 rounded-full mt-2"><div class="h-full rounded-full transition-all" style="width:<?= $sr['total']>0?min(100,$sr['rate']):0 ?>%;background:<?= $sr['rate']>=70?'#22c55e':($sr['rate']>=40?'#eab308':'#6b7280') ?>"></div></div>
             </div>
         </div>
 
@@ -222,7 +230,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <div>
                     <label class="block text-sm font-semibold text-gray-800 mb-1.5">Mobile Number</label>
                     <div class="flex items-center gap-2">
-                        <input type="text" name="customer_phone" value="<?= e($order['customer_phone']) ?>" class="flex-1 px-3 py-2 border border-gray-200 rounded-md text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none">
+                        <input type="text" name="customer_phone" id="customerPhoneInput" value="<?= e($order['customer_phone']) ?>" class="flex-1 px-3 py-2 border border-gray-200 rounded-md text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none">
                         <a href="tel:<?= e($order['customer_phone']) ?>" class="text-green-600 hover:text-green-700 text-sm"><i class="fas fa-phone"></i></a>
                         <a href="https://wa.me/88<?= preg_replace('/[^0-9]/','',$order['customer_phone']) ?>" target="_blank" class="text-green-600 hover:text-green-700"><i class="fab fa-whatsapp text-base"></i></a>
                     </div>
@@ -244,9 +252,11 @@ require_once __DIR__ . '/../includes/header.php';
                         $__ovCid = $order['courier_consignment_id'] ?: ($order['pathao_consignment_id'] ?? '');
                         $__ovTid = $order['courier_tracking_id'] ?: $__ovCid;
                         if (strpos($__ovCn, 'steadfast') !== false) {
-                            $__ovLink = 'https://portal.steadfast.com.bd/find-consignment?consignment_id=' . urlencode($__ovCid);
+                            $__ovLink = 'https://steadfast.com.bd/user/consignment/' . urlencode($__ovCid);
                         } elseif (strpos($__ovCn, 'pathao') !== false) {
-                            $__ovLink = 'https://merchant.pathao.com/courier/consignments/' . urlencode($__ovCid);
+                            $__ovLink = 'https://merchant.pathao.com/courier/orders/' . urlencode($__ovCid);
+                        } elseif (strpos($__ovCn, 'redx') !== false) {
+                            $__ovLink = 'https://redx.com.bd/track-parcel/?trackingId=' . urlencode($__ovTid);
                         } else { $__ovLink = '#'; }
                     ?>
                     <a href="<?= $__ovLink ?>" target="_blank" class="inline-flex items-center gap-1 mt-1 px-2 py-1 bg-green-50 border border-green-200 rounded text-xs text-green-700 hover:bg-green-100 transition font-mono">
@@ -334,18 +344,23 @@ require_once __DIR__ . '/../includes/header.php';
         $__hasCid = !empty($__cid);
         $__isSf = strpos($__courierName, 'steadfast') !== false;
         $__isPathao = strpos($__courierName, 'pathao') !== false;
+        $__isRedx = strpos($__courierName, 'redx') !== false;
         $__canUpload = in_array($order['order_status'], ['processing','confirmed','ready_to_ship','approved']);
-        $__isShipped = in_array($order['order_status'], ['shipped','on_hold','pending_return','pending_cancel','partial_delivered','delivered']);
+        $__isShipped = in_array($order['order_status'], ['ready_to_ship','shipped','on_hold','pending_return','pending_cancel','partial_delivered','delivered']);
         
         // Build portal link
         if ($__isSf && $__hasCid) {
-            $__portalLink = 'https://portal.steadfast.com.bd/find-consignment?consignment_id=' . urlencode($__cid);
+            $__portalLink = 'https://steadfast.com.bd/user/consignment/' . urlencode($__cid);
             $__portalName = 'Steadfast Portal';
             $__trackLink = 'https://steadfast.com.bd/t/' . urlencode($__tid);
         } elseif ($__isPathao && $__hasCid) {
-            $__portalLink = 'https://merchant.pathao.com/courier/consignments/' . urlencode($__cid);
+            $__portalLink = 'https://merchant.pathao.com/courier/orders/' . urlencode($__cid);
             $__portalName = 'Pathao Portal';
             $__trackLink = '';
+        } elseif ($__isRedx && $__hasCid) {
+            $__portalLink = 'https://redx.com.bd/track-parcel/?trackingId=' . urlencode($__tid);
+            $__portalName = 'RedX Tracking';
+            $__trackLink = 'https://redx.com.bd/track-parcel/?trackingId=' . urlencode($__tid);
         } else {
             $__portalLink = '';
             $__portalName = '';
@@ -595,7 +610,7 @@ require_once __DIR__ . '/../includes/header.php';
         <div class="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
             <div class="text-xs font-semibold text-gray-700">Order Actions</div>
             <select id="statusSelect" class="w-full px-3 py-2 border border-gray-200 rounded-md text-sm">
-                <?php foreach(['processing','confirmed','shipped','delivered','pending_return','pending_cancel','partial_delivered','cancelled','returned','on_hold','no_response','good_but_no_response','advance_payment','lost'] as $s): ?>
+                <?php foreach(['processing','confirmed','ready_to_ship','shipped','delivered','pending_return','pending_cancel','partial_delivered','cancelled','returned','on_hold','no_response','good_but_no_response','advance_payment','lost'] as $s): ?>
                 <option value="<?= $s ?>" <?= ($order['order_status']===$s||($s==='processing'&&$order['order_status']==='pending'))?'selected':'' ?>><?= getOrderStatusLabel($s) ?></option>
                 <?php endforeach; ?>
             </select>
@@ -678,25 +693,49 @@ require_once __DIR__ . '/../includes/header.php';
 const PAPI='<?= SITE_URL ?>/api/pathao-api.php',SAPI='<?= SITE_URL ?>/api/search.php?admin=1';
 let searchTimer=null;
 
-function fetchCourierData(){
-    const phone='<?= e(preg_replace('/[^0-9]/','', $order['customer_phone'])) ?>';
-    if(phone.length<10)return;
+let _lastFetchedPhone='';
+function fetchCourierData(forcePhone){
+    let phone=forcePhone||'';
+    if(!phone){const el=document.getElementById('customerPhoneInput');phone=el?el.value:'';}
+    phone=phone.replace(/\D/g,'');
+    if(phone.startsWith('88')&&phone.length>11) phone=phone.substring(2);
+    if(phone.length===10&&phone[0]!=='0') phone='0'+phone;
+    if(phone.length<11||!/^01[3-9]/.test(phone)){return;}
+    if(phone===_lastFetchedPhone&&!forcePhone) return;
+    _lastFetchedPhone=phone;
     const btn=document.getElementById('fillInfoBtn');
-    btn.textContent='Fetching...';btn.disabled=true;
+    btn.textContent='Fetching...';btn.disabled=true;btn.className='w-full mt-2 py-1.5 bg-yellow-50 text-yellow-700 rounded-md text-xs font-semibold';
     fetch('<?= adminUrl("api/courier-lookup.php") ?>?phone='+phone).then(r=>r.json()).then(d=>{
-        if(d.error){btn.textContent='❌ '+d.error;return;}
+        if(d.error){btn.textContent='Error';btn.className='w-full mt-2 py-1.5 bg-red-50 text-red-600 rounded-md text-xs font-semibold';return;}
         updCard('overall',d.overall);
         ['Pathao','RedX','Steadfast'].forEach(n=>{if(d.couriers?.[n])updCard(n.toLowerCase(),d.couriers[n]);});
         const orc=document.getElementById('card-ourrecord'),or=d.our_record;
         if(orc&&or){
-            orc.querySelector('[data-custtype]').textContent=or.is_new?'New Customer':'Returning Customer';
-            orc.querySelector('[data-custtype]').style.color=or.is_new?'#2563eb':'#16a34a';
-            orc.querySelector('[data-webcancel]').textContent='Web Order Cancel: '+or.web_cancels;
-            orc.querySelector('[data-totalspent]').textContent='Total Spent: ৳'+Number(or.total_spent).toLocaleString();
+            const ct=orc.querySelector('[data-custtype]');
+            if(ct){if(or.is_new){ct.textContent='New Customer';}else{ct.remove();}}
+            const ot=orc.querySelector('[data-ourtotal]');if(ot)ot.textContent='Total: '+(or.total||or.total_orders||0);
+            const oc=orc.querySelector('[data-ourcancelled]');if(oc)oc.textContent='Cancelled: '+(or.cancelled||0);
+            const wc=orc.querySelector('[data-webcancel]');if(wc)wc.textContent='Web Order Cancel: '+(or.web_cancels||0);
+            const ts=orc.querySelector('[data-totalspent]');if(ts)ts.textContent='Total Spent: ৳'+Number(or.total_spent||0).toLocaleString();
         }
-        btn.textContent='✅ Updated';btn.className='w-full mt-2 py-1.5 bg-green-100 text-green-700 rounded-md text-xs font-semibold';
-    }).catch(()=>{btn.textContent='❌ Error';});
+        btn.textContent='Updated';btn.className='w-full mt-2 py-1.5 bg-green-50 text-green-700 rounded-md text-xs font-semibold';
+    }).catch(()=>{btn.textContent='Error';btn.className='w-full mt-2 py-1.5 bg-red-50 text-red-600 rounded-md text-xs font-semibold';});
 }
+// Auto-fetch when phone input reaches 11 valid digits
+(function(){
+    let _phoneTimer=null;
+    const el=document.getElementById('customerPhoneInput');
+    if(!el) return;
+    el.addEventListener('input',function(){
+        clearTimeout(_phoneTimer);
+        _phoneTimer=setTimeout(()=>{
+            let p=el.value.replace(/\D/g,'');
+            if(p.startsWith('88')&&p.length>11) p=p.substring(2);
+            if(p.length===10&&p[0]!=='0') p='0'+p;
+            if(p.length===11&&/^01[3-9]/.test(p)) fetchCourierData(p);
+        },400);
+    });
+})();
 function updCard(id,data){
     const c=document.getElementById('card-'+id);if(!c||!data)return;
     const rate=data.rate,rc=rate>=70?'#16a34a':rate>=40?'#ca8a04':'#dc2626';
@@ -748,7 +787,7 @@ function calcTotals(){
         const q=parseInt(r.querySelector('.item-qty')?.value||1),p=parseFloat(r.querySelector('.item-price')?.value||0),l=q*p;
         const lt=r.querySelector('.item-line-total');if(lt)lt.textContent=l.toFixed(2);sub+=l;cnt++;
     });
-    const disc=parseFloat(document.getElementById('discountInput').value||0),ship=parseFloat(document.getElementById('shippingInput').value||0),grand=sub+ship-disc;
+    const disc=parseFloat(document.getElementById('discountInput').value||0),adv=parseFloat(document.getElementById('advanceInput').value||0),ship=parseFloat(document.getElementById('shippingInput').value||0),grand=Math.max(0,sub+ship-disc-adv);
     document.getElementById('subtotalDisplay').textContent=sub.toLocaleString();
     document.getElementById('grandTotalDisplay').textContent=grand.toLocaleString();
     document.getElementById('itemCount').textContent=cnt;
@@ -814,24 +853,271 @@ setTimeout(async function(){
     <?php if ($storedArea): ?>var as2=document.getElementById('pAreaId');if(as2)as2.value='<?= $storedArea ?>';<?php endif; ?>}<?php endif; ?>
     }}
 }, 600);
+<?php else: ?>
+// No city saved — auto-detect from address on page load
+setTimeout(function(){ autoDetectLocation(true); }, 800);
 <?php endif; ?>
 
-async function autoDetectLocation(){
-    const addr='<?=addslashes($order['customer_address']??'')?>'.toLowerCase(),res=document.getElementById('autoDetectResult');
-    res.classList.remove('hidden');res.className='mt-2 text-xs bg-yellow-50 p-2 rounded';res.textContent='🔍 Detecting...';
+async function autoDetectLocation(silent){
+    const addrEl=document.querySelector('textarea[name="customer_address"]');
+    const res=document.getElementById('autoDetectResult');
+    if(!addrEl||!addrEl.value.trim()){
+        if(!silent){res.classList.remove('hidden');res.className='mt-2 text-xs bg-orange-50 text-orange-700 p-2 rounded';res.textContent='⚠ Address is empty.';}
+        return;
+    }
+
+    if(!silent){res.classList.remove('hidden');res.className='mt-2 text-xs bg-yellow-50 text-yellow-700 p-2 rounded';res.textContent='🔍 Detecting...';}
+
+    // ─── Utility: normalize text for matching ───
+    // Strips ALL punctuation, normalizes whitespace, lowercases
+    function norm(s){return (s||'').toLowerCase().replace(/[''`]/g,'').replace(/[^a-z0-9\u0980-\u09FF\s]/g,' ').replace(/\s+/g,' ').trim();}
+
+    // ─── Bangla → English dictionary (districts + areas) ───
+    const bnMap={
+        'ঢাকা':'dhaka','চট্টগ্রাম':'chittagong','চিটাগাং':'chittagong','সিলেট':'sylhet','রাজশাহী':'rajshahi',
+        'খুলনা':'khulna','বরিশাল':'barishal','বরিশাল':'barisal','রংপুর':'rangpur','ময়মনসিংহ':'mymensingh',
+        'কুমিল্লা':'cumilla','কুষ্টিয়া':'kushtia','যশোর':'jessore','জামালপুর':'jamalpur','টাঙ্গাইল':'tangail',
+        'গাজীপুর':'gazipur','নারায়ণগঞ্জ':'narayanganj','ফরিদপুর':'faridpur','পাবনা':'pabna','নোয়াখালী':'noakhali',
+        'বগুড়া':'bogura','দিনাজপুর':'dinajpur','চাঁদপুর':'chandpur','মানিকগঞ্জ':'manikganj','মুন্সীগঞ্জ':'munshiganj',
+        'নরসিংদী':'narsingdi','কিশোরগঞ্জ':'kishoreganj','শেরপুর':'sherpur','নেত্রকোনা':'netrokona',
+        'সাতক্ষীরা':'satkhira','নড়াইল':'narail','মাগুরা':'magura','মেহেরপুর':'meherpur','চুয়াডাঙ্গা':'chuadanga',
+        'ঝিনাইদহ':'jhenaidah','বাগেরহাট':'bagerhat','পিরোজপুর':'pirojpur','ঝালকাঠি':'jhalokati',
+        'ভোলা':'bhola','পটুয়াখালী':'patuakhali','বরগুনা':'barguna','লক্ষ্মীপুর':'lakshmipur',
+        'ফেনী':'feni','ব্রাহ্মণবাড়িয়া':'brahmanbaria','হবিগঞ্জ':'habiganj','মৌলভীবাজার':'moulvibazar',
+        'সুনামগঞ্জ':'sunamganj','নওগাঁ':'naogaon','নাটোর':'natore','চাঁপাইনবাবগঞ্জ':'chapainawabganj',
+        'সিরাজগঞ্জ':'sirajganj','জয়পুরহাট':'joypurhat','গাইবান্ধা':'gaibandha','কুড়িগ্রাম':'kurigram',
+        'লালমনিরহাট':'lalmonirhat','নীলফামারী':'nilphamari','ঠাকুরগাঁও':'thakurgaon','পঞ্চগড়':'panchagarh',
+        'শরীয়তপুর':'shariatpur','মাদারীপুর':'madaripur','গোপালগঞ্জ':'gopalganj','রাজবাড়ী':'rajbari',
+        'কক্সবাজার':'coxs bazar','রাঙামাটি':'rangamati','বান্দরবান':'bandarban','খাগড়াছড়ি':'khagrachhari',
+        'সদর':'sadar','উপজেলা':'upazila','জেলা':'district','থানা':'thana'
+    };
+
+    // ─── English alias map: common misspellings / variations → canonical name ───
+    const aliasMap={
+        'coxs bazar':'coxs bazar','coxsbazar':'coxs bazar','cox bazar':'coxs bazar','koxbazar':'coxs bazar',
+        'coxbazar':'coxs bazar','koksbazar':'coxs bazar','coxs':'coxs bazar',
+        'chattagram':'chittagong','ctg':'chittagong','chottogram':'chittagong','chattogram':'chittagong',
+        'comilla':'cumilla','kumilla':'cumilla',
+        'bogra':'bogura','bograa':'bogura',
+        'jessore':'jashore','joshor':'jashore','jashor':'jashore',
+        'barisal':'barishal','borishal':'barishal',
+        'mymensing':'mymensingh','mymenshingh':'mymensingh','maimansingh':'mymensingh',
+        'noakhali':'noakhali','noakhilla':'noakhali',
+        'sylhett':'sylhet','silhet':'sylhet','shilet':'sylhet',
+        'narshingdi':'narsingdi','narsindi':'narsingdi',
+        'naryangonj':'narayanganj','naranganj':'narayanganj','narayangonj':'narayanganj',
+        'munshigonj':'munshiganj','munsiganj':'munshiganj',
+        'gajipur':'gazipur','ghazipur':'gazipur',
+        'tangaile':'tangail','tangale':'tangail',
+        'kushtiya':'kushtia','kustia':'kushtia',
+        'laxmipur':'lakshmipur','laksmipur':'lakshmipur',
+        'bramanbariya':'brahmanbaria','bbariya':'brahmanbaria','brahmanbaria':'brahmanbaria',
+        'chapai':'chapainawabganj','chapainababganj':'chapainawabganj',
+        'sirajgonj':'sirajganj','shirajganj':'sirajganj',
+        'faridpure':'faridpur','foridpur':'faridpur',
+        'bandorban':'bandarban','banderban':'bandarban',
+        'khagrachari':'khagrachhari','khagrasori':'khagrachhari',
+        'rangpur':'rangpur','rongpur':'rangpur',
+        'rajshahi':'rajshahi','razshahi':'rajshahi',
+        'dinajpure':'dinajpur','dinajpor':'dinajpur',
+        'panchogarh':'panchagarh','ponchoghor':'panchagarh',
+        'manikgonj':'manikganj','manikgong':'manikganj',
+        'shoriotpur':'shariatpur','shariyatpur':'shariatpur',
+        'gopalgonj':'gopalganj','gopalgunj':'gopalganj',
+        'rajbari':'rajbari','razbaree':'rajbari',
+        'habigonj':'habiganj','hobiganj':'habiganj',
+        'moulovibazar':'moulvibazar','molvibazar':'moulvibazar','sylhet moulvibazar':'moulvibazar',
+        'sunamgonj':'sunamganj','sunaamganj':'sunamganj',
+        'joypurhat':'joypurhat','joipurhat':'joypurhat',
+        'gaibanda':'gaibandha','gaibandah':'gaibandha',
+        'kurigam':'kurigram','kurigramm':'kurigram',
+        'lalmonirhat':'lalmonirhat','lalmonirhat':'lalmonirhat',
+        'nilphamary':'nilphamari','neelphamari':'nilphamari',
+        'thakurgao':'thakurgaon','thakurgaw':'thakurgaon',
+        'savar':'savar','shabar':'savar'
+    };
+
+    // ─── Dhaka sub-area keywords → always means Dhaka city ───
+    const dhakaAreas=['mirpur','uttara','dhanmondi','gulshan','motijheel','banani','mohammadpur','farmgate',
+        'badda','rampura','khilgaon','tejgaon','lalbagh','wari','jatrabari','bashundhara','cantonment','kafrul',
+        'pallabi','shah ali','adabor','hazaribagh','shyamoli','kalabagan','lalmatia','elephant road','new market',
+        'shahbag','paltan','banglamotor','kakrail','eskaton','siddheshwari','malibagh','mogbazar','nakhalpara',
+        'keraniganj','demra','tongi','turag','savar','ashulia','dhamrai','dohar','nawabganj','kamrangirchar',
+        'sutrapur','kotwali','ramna','chowk bazar','gandaria','shantinagar','mugda','sabujbag','khilkhet',
+        'bimanbandar','dakshinkhan','bhashantek','agargaon','shewrapara','rokeya sarani','banasree'];
+
     try{
-        const j=await(await fetch(PAPI+'?action=get_cities')).json(),cities=j.data?.data||j.data||[];
-        const dkw=['dhaka','ঢাকা','mirpur','uttara','dhanmondi','gulshan','motijheel','banani','mohammadpur','farmgate','badda','rampura','khilgaon'];
-        let mc=dkw.some(k=>addr.includes(k))?cities.find(c=>c.city_name.toLowerCase()==='dhaka'):null;
-        if(!mc)for(const c of cities)if(addr.includes(c.city_name.toLowerCase())){mc=c;break;}
-        if(mc){
-            document.getElementById('pCityId').value=mc.city_id;await loadZones(mc.city_id);
-            const zj=await(await fetch(PAPI+'?action=get_zones&city_id='+mc.city_id)).json(),mz=(zj.data?.data||zj.data||[]).find(z=>addr.includes(z.zone_name.toLowerCase()));
-            if(mz){document.getElementById('pZoneId').value=mz.zone_id;await loadAreas(mz.zone_id);}
-            res.className='mt-2 text-xs bg-green-50 text-green-700 p-2 rounded';res.textContent='✅ '+mc.city_name+(mz?' → '+mz.zone_name:' — select zone manually');
-            saveOrderLocation();
-        }else{res.className='mt-2 text-xs bg-orange-50 text-orange-700 p-2 rounded';res.textContent='⚠ Could not detect.';}
-    }catch(e){res.className='mt-2 text-xs bg-red-50 text-red-700 p-2 rounded';res.textContent=e.message;}
+        // ─── Step 0: Build normalized address with Bangla → English translation ───
+        const rawAddr = addrEl.value;
+        let normAddr = norm(rawAddr);
+        // Append English translations of any Bangla words found
+        for(const [bn,en] of Object.entries(bnMap)){
+            if(rawAddr.includes(bn)) normAddr += ' ' + en;
+        }
+        // Apply alias normalization: replace known misspellings
+        let aliasAddr = normAddr;
+        for(const [mis,canon] of Object.entries(aliasMap)){
+            if(aliasAddr.includes(mis)) aliasAddr += ' ' + canon;
+        }
+
+        // ─── Step 1: Fetch Pathao cities ───
+        const j=await(await fetch(PAPI+'?action=get_cities')).json();
+        const cities=j.data?.data||j.data||[];
+        if(!cities.length){if(!silent){res.className='mt-2 text-xs bg-red-50 text-red-700 p-2 rounded';res.textContent='⚠ Could not load Pathao city list.';}return;}
+
+        // Build a scoring function
+        function scoreCity(cityName){
+            const cn = norm(cityName);
+            const cnWords = cn.split(' ');
+            let score = 0;
+
+            // Exact full name match in address
+            if(aliasAddr.includes(cn)) score += 100;
+
+            // Check each word of city name (for multi-word cities like "coxs bazar")
+            const matchedWords = cnWords.filter(w => w.length >= 3 && aliasAddr.split(' ').includes(w));
+            if(matchedWords.length === cnWords.length && cnWords.length > 0) score += 90;
+            else if(matchedWords.length > 0) score += matchedWords.length * 20;
+
+            // Check if address contains "<city> upazila/zila/district/sadar" pattern
+            // e.g., "Sadar Cox's Bazar Upazila" or "Cox's Bazar Sadar"
+            const patterns = [
+                new RegExp('sadar\\s+' + cn.replace(/\s+/g, '\\s*')),
+                new RegExp(cn.replace(/\s+/g, '\\s*') + '\\s+(?:sadar|upazila|upozila|zila|zela|district|thana)'),
+                new RegExp(cn.replace(/\s+/g, '\\s*') + '\\s+(?:city|town|metro)')
+            ];
+            for(const p of patterns){
+                if(p.test(aliasAddr)) score += 50;
+            }
+
+            // Fuzzy: check if any word in address is within edit distance 1 of city words
+            if(score === 0 && cn.length >= 4){
+                const addrWords = aliasAddr.split(' ');
+                for(const aw of addrWords){
+                    if(aw.length < 3) continue;
+                    for(const cw of cnWords){
+                        if(cw.length < 3) continue;
+                        if(editDist(aw, cw) <= 1 && cw.length >= 4) score += 30;
+                    }
+                }
+            }
+            return score;
+        }
+
+        // Simple Levenshtein distance (capped for performance)
+        function editDist(a,b){
+            if(Math.abs(a.length-b.length)>2) return 99;
+            const m=a.length,n=b.length;
+            const dp=Array.from({length:m+1},(_,i)=>i);
+            for(let j=1;j<=n;j++){
+                let prev=dp[0]; dp[0]=j;
+                for(let i=1;i<=m;i++){
+                    const tmp=dp[i];
+                    dp[i]=a[i-1]===b[j-1]?prev:1+Math.min(prev,dp[i],dp[i-1]);
+                    prev=tmp;
+                }
+            }
+            return dp[m];
+        }
+
+        // ─── Step 2: Score all cities and pick best non-Dhaka match first ───
+        let scored = cities.map(c => ({...c, score: scoreCity(c.city_name)})).filter(c => c.score > 0);
+        scored.sort((a,b) => b.score - a.score);
+
+        // Prefer non-Dhaka matches when there's a specific district in the address
+        // Only fall back to Dhaka if it's the ONLY match or via Dhaka area keywords
+        let mc = null;
+        const dhakaEntry = scored.find(c => norm(c.city_name) === 'dhaka');
+        const nonDhaka = scored.filter(c => norm(c.city_name) !== 'dhaka');
+
+        if(nonDhaka.length > 0 && nonDhaka[0].score >= 30){
+            mc = nonDhaka[0]; // Prefer specific district
+        } else if(dhakaEntry && dhakaEntry.score >= 50){
+            mc = dhakaEntry; // Strong Dhaka match
+        } else if(scored.length > 0){
+            mc = scored[0]; // Best whatever we have
+        }
+
+        // ─── Step 2b: Dhaka sub-area fallback (only if no district matched) ───
+        if(!mc){
+            const isDhakaSub = dhakaAreas.some(k => aliasAddr.includes(k));
+            if(isDhakaSub) mc = cities.find(c => norm(c.city_name) === 'dhaka');
+        }
+
+        if(!mc){
+            if(!silent){res.className='mt-2 text-xs bg-orange-50 text-orange-700 p-2 rounded';res.textContent='⚠ Could not detect city. Try adding district name in English.';}
+            return;
+        }
+
+        // ─── Step 3: Set city and match zone ───
+        document.getElementById('pCityId').value=mc.city_id;
+        await loadZones(mc.city_id);
+
+        const zj=await(await fetch(PAPI+'?action=get_zones&city_id='+mc.city_id)).json();
+        const zones=zj.data?.data||zj.data||[];
+        let mz=null;
+
+        // Score zones similarly
+        let scoredZones = zones.map(z=>{
+            const zn=norm(z.zone_name);
+            let s=0;
+            if(aliasAddr.includes(zn)) s+=100;
+            // First word match (>=4 chars)
+            const fw=zn.split(' ')[0];
+            if(fw.length>=4 && aliasAddr.includes(fw)) s+=60;
+            // Word intersection
+            const zWords=zn.split(' ').filter(w=>w.length>=3);
+            const matched=zWords.filter(w=>aliasAddr.includes(w));
+            if(matched.length>0) s+=matched.length*25;
+            // Fuzzy first word
+            if(s===0 && fw.length>=4){
+                const addrWords=aliasAddr.split(' ');
+                for(const aw of addrWords){
+                    if(editDist(aw,fw)<=1) s+=20;
+                }
+            }
+            return {...z,score:s};
+        }).filter(z=>z.score>0).sort((a,b)=>b.score-a.score);
+
+        if(scoredZones.length>0) mz=scoredZones[0];
+
+        if(mz){
+            document.getElementById('pZoneId').value=mz.zone_id;
+            await loadAreas(mz.zone_id);
+
+            // ─── Step 4: Match area ───
+            const areaSelect=document.getElementById('pAreaId');
+            let bestArea=null, bestAreaScore=0;
+            for(const opt of areaSelect.options){
+                if(!opt.value) continue;
+                const an=norm(opt.textContent);
+                let s=0;
+                if(aliasAddr.includes(an)) s+=100;
+                const fw=an.split(' ')[0];
+                if(fw.length>=4 && aliasAddr.includes(fw)) s+=60;
+                const aWords=an.split(' ').filter(w=>w.length>=3);
+                const matched=aWords.filter(w=>aliasAddr.includes(w));
+                if(matched.length>0) s+=matched.length*25;
+                if(s>bestAreaScore){bestAreaScore=s;bestArea=opt;}
+            }
+            if(bestArea) areaSelect.value=bestArea.value;
+        }
+
+        // ─── Step 5: Show result and save ───
+        const cityName=mc.city_name;
+        const zoneName=mz?mz.zone_name:'';
+        const areaName=document.getElementById('pAreaId').selectedOptions[0]?.text||'';
+        const hasArea=document.getElementById('pAreaId').value;
+
+        res.classList.remove('hidden');
+        res.className='mt-2 text-xs bg-green-50 text-green-700 p-2 rounded';
+        res.textContent='✅ '+cityName+(zoneName?' → '+zoneName:'')+(hasArea&&areaName&&areaName!=='Select Area'?' → '+areaName:'');
+        if(!mz) res.textContent+=' — select zone manually';
+        saveOrderLocation();
+
+    }catch(e){
+        if(!silent){res.classList.remove('hidden');res.className='mt-2 text-xs bg-red-50 text-red-700 p-2 rounded';res.textContent='Error: '+e.message;}
+    }
 }
 function esc(s){return s?s.replace(/&/g,'&amp;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;'):''}
 calcTotals();
@@ -869,8 +1155,10 @@ function uploadToCourier(orderId) {
         uploadToPathao(orderId, btn);
     } else if (courier.indexOf('steadfast') !== -1) {
         uploadToSteadfast(orderId, btn);
+    } else if (courier.indexOf('redx') !== -1) {
+        uploadToRedX(orderId, btn);
     } else {
-        alert('⚠ Upload not supported for "' + (document.querySelector('select[name="delivery_method"]')?.value || courier) + '". Only Pathao and Steadfast have API upload.');
+        alert('⚠ Upload not supported for "' + (document.querySelector('select[name="delivery_method"]')?.value || courier) + '". Only Pathao, Steadfast, and RedX have API upload.');
     }
 }
 
@@ -882,6 +1170,17 @@ function uploadToSteadfast(orderId, btn) {
         if (d.success) { location.reload(); }
         else { alert('❌ ' + (d.message || d.error || 'Upload failed')); if(btn){btn.disabled=false;btn.textContent='🚀 Upload to Steadfast';} }
     }).catch(function(e) { alert('Error: ' + e.message); if(btn){btn.disabled=false;btn.textContent='🚀 Upload to Steadfast';} });
+}
+
+function uploadToRedX(orderId, btn) {
+    if (!confirm('Upload this order to RedX?')) return;
+    if(btn){btn.disabled=true;btn.textContent='⏳ Uploading to RedX...';}
+    var REDX_API = '<?=SITE_URL?>/api/redx-actions.php';
+    fetch(REDX_API, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'upload_order', order_id:orderId})})
+    .then(function(r){return r.json()}).then(function(d) {
+        if (d.success) { location.reload(); }
+        else { alert('❌ ' + (d.message || d.error || 'RedX upload failed')); if(btn){btn.disabled=false;btn.textContent='🚀 Upload to RedX';} }
+    }).catch(function(e) { alert('Error: ' + e.message); if(btn){btn.disabled=false;btn.textContent='🚀 Upload to RedX';} });
 }
 
 function uploadToPathao(orderId, btn) {
@@ -967,5 +1266,4 @@ function courierUpdateUI(d) {
 })();
 <?php endif; ?>
 </script>
-<?php include __DIR__ . '/../includes/phone-checker-widget.php'; ?>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

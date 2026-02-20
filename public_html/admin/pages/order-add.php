@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $shipping = floatval($_POST['shipping_cost'] ?? 80);
         $discount = floatval($_POST['discount_amount'] ?? 0);
         $advance  = floatval($_POST['advance_amount'] ?? 0);
-        $total    = $subtotal + $shipping - $discount;
+        $total    = max(0, $subtotal + $shipping - $discount - $advance);
 
         // Find or create customer
         $phone = sanitize($_POST['customer_phone'] ?? '');
@@ -387,7 +387,7 @@ function calcTotals(){
     const disc=parseFloat(document.getElementById('discountInput').value||0);
     const adv=parseFloat(document.getElementById('advanceInput').value||0);
     const ship=parseFloat(document.getElementById('shippingInput').value||0);
-    const grand=sub+ship-disc;
+    const grand=Math.max(0,sub+ship-disc-adv);
 
     document.getElementById('subtotalDisplay').textContent=sub.toLocaleString();
     document.getElementById('grandTotalDisplay').textContent=grand.toLocaleString();

@@ -1,0 +1,32 @@
+22:26:54 ORDER START: store_credit_used=0, phone=01645883165
+22:26:54 CREDIT: requestedTk=0, creditCustId=1, loggedIn=0, phoneCust=0
+22:26:54 CREDIT: enabled_setting='1', checkout_setting='1'
+22:26:54 ORDER COMPLETE: #ORD-20260217-62A61, total=900, creditUsed=0, creditsDeducted=0, merged=no
+12:59:27 ORDER START: store_credit_used=0, phone=01725815061
+12:59:27 CREDIT: requestedTk=0, creditCustId=2, loggedIn=0, phoneCust=0
+12:59:27 CREDIT: enabled_setting='1', checkout_setting='1'
+12:59:27 ORDER COMPLETE: #ORD-20260218-38D54, total=5768, creditUsed=0, creditsDeducted=0, merged=no
+19:12:19 ORDER START: store_credit_used=0, phone=01576553415
+19:12:19 CREDIT: requestedTk=0, creditCustId=3, loggedIn=0, phoneCust=0
+19:12:19 CREDIT: enabled_setting='1', checkout_setting='1'
+19:12:19 ORDER COMPLETE: #ORD-20260218-91715, total=4649, creditUsed=0, creditsDeducted=0, merged=no
+20:41:00 ORDER START: store_credit_used=0, phone=01576553415
+20:41:00 CREDIT: requestedTk=0, creditCustId=3, loggedIn=0, phoneCust=3
+20:41:00 CREDIT: enabled_setting='1', checkout_setting='1'
+20:41:00 ORDER COMPLETE: #ORD-20260218-91715, total=1930, creditUsed=0, creditsDeducted=0, merged=yes
+22:36:18 ORDER START: store_credit_used=0, phone=01576553415
+22:36:18 CREDIT: requestedTk=0, creditCustId=3, loggedIn=0, phoneCust=3
+22:36:18 CREDIT: enabled_setting='1', checkout_setting='1'
+22:36:18 ORDER COMPLETE: #ORD-20260218-1D902, total=900, creditUsed=0, creditsDeducted=0, merged=no
+07:49:05 ORDER START: store_credit_used=0, phone=01576553415
+07:49:05 CREDIT: requestedTk=0, creditCustId=3, loggedIn=0, phoneCust=3
+07:49:05 CREDIT: enabled_setting='1', checkout_setting='1'
+07:49:05 ORDER COMPLETE: #ORD-20260219-B8462, total=779, creditUsed=0, creditsDeducted=0, merged=no
+08:46:09 ORDER START: store_credit_used=0, phone=01828373189
+08:46:09 CREDIT: requestedTk=0, creditCustId=4, loggedIn=0, phoneCust=0
+08:46:09 CREDIT: enabled_setting='1', checkout_setting='1'
+08:46:09 ORDER COMPLETE: #ORD-20260219-183F8, total=5243, creditUsed=0, creditsDeducted=0, merged=no
+14:54:35 ORDER START: store_credit_used=0, phone=01828373189
+14:54:35 CREDIT: requestedTk=0, creditCustId=4, loggedIn=0, phoneCust=4
+14:54:35 CREDIT: enabled_setting='1', checkout_setting='1'
+14:54:35 ORDER COMPLETE: #ORD-20260219-27C2C, total=3769, creditUsed=0, creditsDeducted=0, merged=no

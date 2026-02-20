@@ -25,14 +25,14 @@ ecommerce/
 │   ├── api/                  # AJAX endpoints (actions, upload)
 │   ├── includes/             # Auth, header, footer
 │   ├── pages/                # 25 admin pages
-   └── login.php
+   └ login.php
 ├─ api/                      # Frontend APIs (cart, order, wishlist, export)
-├── config/                   # Database config
+─ config/                   # Database config
 ├── includes/                 # Shared functions, header, footer, product-card
 ├─ pages/                    # Frontend pages (11 pages)
 ├─ uploads/                  # User uploads (products, banners, logos)
 ├── index.php                 # Router
-├── .htaccess                 # URL rewriting + security
+── .htaccess                 # URL rewriting + security
 └── database.sql              # Full schema (40+ tables)
 ```
 
@@ -51,7 +51,7 @@ ecommerce/
 - **Static Pages** — CMS-powered (About, Privacy, Terms, etc.)
 - **404** — Custom error page (Bengali)
 
-### ⚙️ Admin Panel (25 pages)
+### ️ Admin Panel (25 pages)
 | Section | Pages |
 |---------|-------|
 | **Core** | Dashboard (charts), Profile |
@@ -65,7 +65,7 @@ ecommerce/
 | **Marketing** | Coupons (% or flat, limits, expiry) |
 | **System** | Settings (22 color pickers, SEO, analytics, social) |
 
-### 🔒 Security
+###  Security
 - Prepared statements (SQL injection protection)
 - Password hashing (bcrypt)
 - CSRF token helpers
@@ -74,8 +74,8 @@ ecommerce/
 - Session-based auth
 - .htaccess security headers
 
-### 🇧🇩 Bangladesh-Specific
-- Bengali (বংলা) frontend UI
+### 🇧 Bangladesh-Specific
+- Bengali (বংা) frontend UI
 - BDT () currency formatting
 - Cash on Delivery (COD)
 - Local courier APIs (Steadfast, Pathao, RedX, Paperfly)
@@ -110,12 +110,12 @@ Inventory: `warehouses`, `warehouse_stock`
 | `/admin/api/actions.php` | POST | Admin AJAX (status, stock, notifications) |
 | `/admin/api/upload.php` | POST | File upload for products/banners |
 
-# KHATIBANGLA.COM — COMPREHENSIVE BUG FIX GUIDE
+# KHATIBANGLA.COM  COMPREHENSIVE BUG FIX GUIDE
 # ================================================
 # Date: Feb 15, 2026
 # Issues: Product page broken, bundle not working, wrong product in checkout, store credit system
 
-## 🔴 ROOT CAUSE ANALYSIS
+##  ROOT CAUSE ANALYSIS
 
 The `$product` PHP variable in `pages/product.php` is OVERWRITTEN by the related products
 foreach loop on line ~538:
@@ -133,9 +133,9 @@ This causes:
 - ❌ Addon/variation clicks work visually but send wrong product to cart
 - ❌ Bundle sends wrong product_id → "No bundle found" error
 - ❌ Checkout shows wrong product name
-- ❌ Mobile sticky bar shows wrong price (₿1,299 instead of ₿980)
+- ❌ Mobile sticky bar shows wrong price (1,299 instead of ₿980)
 
-## 📋 FIX ORDER
+##  FIX ORDER
 
 1. Run `store-credit-upgrade.sql` in phpMyAdmin
 2. Run `apply-fixes.php` on your server (then DELETE it)
@@ -239,15 +239,15 @@ if ($custCredit > 0 && $showStoreCredit):
     <div class="flex items-center justify-between">
         <label class="flex items-center gap-2 cursor-pointer text-sm">
             <input type="checkbox" id="use-store-credit" class="rounded text-yellow-600" onchange="toggleStoreCredit()">
-            <span class="text-yellow-700"><i class="fas fa-coins mr-1"></i>স্টোর ক্রেডিট ব্যবহার করুন</span>
+            <span class="text-yellow-700"><i class="fas fa-coins mr-1"></i>স্টোর ্রেডিট ব্যহার করুন</span>
         </label>
         <div class="text-right">
-            <span class="text-xs text-yellow-600 font-semibold block"><?= number_format($custCredit, 0) ?> ক্রেডিট</span>
+            <span class="text-xs text-yellow-600 font-semibold block"><?= number_format($custCredit, 0) ?> করেডিট</span>
             <span class="text-[10px] text-yellow-500">(= ৳<?= number_format($creditTkValue, 0) ?>)</span>
         </div>
     </div>
     <div id="credit-applied-row" class="hidden mt-2 flex justify-between text-yellow-700 text-sm">
-        <span><i class="fas fa-coins mr-1"></i> স্টোর ক্রেডিট:</span><span id="popup-credit" class="font-medium">-৳ 0</span>
+        <span><i class="fas fa-coins mr-1"></i> স্টো ক্রেডিট:</span><span id="popup-credit" class="font-medium">-৳ 0</span>
     </div>
     <input type="hidden" id="store-credit-amount" name="store_credit_used" value="0">
     <input type="hidden" id="store-credit-max" value="<?= $custCredit ?>">
@@ -325,15 +325,306 @@ foreach ($creditSettings as $key) {
 After applying all fixes:
 
 1. [ ] Open Aviator OG product → Console shows PRODUCT_ID = 16, BASE_PRICE = 980
-2. [ ] Click "অর্ডার করুন" → Checkout shows "এভিয়েটর ওজি" (not Blood Pressure Monitor)
-3. [ ] Click "বান্ডেল কিনুন" → Bundle products added to checkout correctly
+2. [ ] Click "অর্ডার করুন" → Checkout shows "এভিয়টর ও" (not Blood Pressure Monitor)
+3. [ ] Click "বা্েল কিনুন" → Bundle products added to checkout correctly
 4. [ ] Select variation (Golden/Black) → Price updates correctly
 5. [ ] Select addon → Price adds correctly, can deselect by clicking again
 6. [ ] Mobile sticky bar → Shows correct price
 7. [ ] Login as user with credits → Checkout shows credit option with converted tk value
-8. [ ] Check credit: 100 credits × 0.75 = ৳75 discount applied
+8. [ ] Check credit: 100 credits  0.75 = ৳75 discount applied
 9. [ ] Admin → Settings → Store Credits → Can change rate, enable/disable checkout option
 10. [ ] Place order with credit → Credit deducted in credit units, tk amount subtracted from total
+
+17-02-2025 stead update//
+# Steadfast Courier Full Integration
+## Deploy Date: 2026-02-17
+
+## What's Included
+
+### New Files (copy to server)
+- `public_html/api/steadfast.php`  Full Steadfast API class (create order, bulk, status check, balance, return requests, payments)
+- `public_html/api/steadfast-actions.php` — AJAX endpoint for admin panel (upload, sync, balance, settings, webhook logs)
+- `public_html/api/courier-webhook.php`  Enhanced webhook receiver (tracking_message, delivery_charge, DB logging)
+
+### Updated Files (REPLACE existing)
+- `public_html/admin/pages/courier.php`  Full Steadfast settings tab (API keys, login creds, webhook config, balance, stats, consignment lookup)
+- `public_html/admin/pages/order-management.php` — Clickable consignment ID links, color-coded courier status, auto-migration for new columns
+- `public_html/admin/pages/order-view.php` — Tracking card with upload button, sync status, portal links, customer tracking link
+
+### SQL Migration (run in phpMyAdmin if auto-migration fails)
+- `steadfast-migration.sql`
+
+---
+
+## Deployment Steps
+
+### Step 1: Run SQL Migration
+Open phpMyAdmin → Run `steadfast-migration.sql`
+(Or skip this — `order-management.php` has auto-migration that creates columns on first load)
+
+### Step 2: Upload via CyberPanel File Manager
+Extract the ZIP maintaining the folder structure. Files go to:
+```
+public_html/
+── api/
+│   ├── steadfast.php          (NEW - replaces old)
+│   ├── steadfast-actions.php  (NEW)
+│   ── courier-webhook.php    (REPLACE)
+└── admin/pages/
+    ├── courier.php            (REPLACE)
+    ├── order-management.php   (REPLACE)
+    └── order-view.php         (REPLACE)
+```
+
+### Step 3: Configure in Admin Panel
+1. Go to **Admin → Courier → Steadfast** tab
+2. Enter your **API Key** and **Secret Key** from [portal.steadfast.com.bd/user/api](https://portal.steadfast.com.bd/user/api)
+3. Click **Test Connection** — should show your balance
+4. (Optional) Enter **Steadfast Login Email/Password** for delivery rating checks
+5. (Optional) Set **Webhook Bearer Token** and configure it in [Steadfast Webhook Settings](https://portal.steadfast.com.bd/user/webhook/add)
+6. Set **Default Shipping Note** if desired
+7. Toggle **Active** and **Send Product Names** as needed
+8. Click **Save Settings**
+
+### Step 4: Configure Webhook in Steadfast Portal
+1. Go to [portal.steadfast.com.bd → Webhook](https://portal.steadfast.com.bd/user/webhook/add)
+2. Set Callback URL: `https://khatibangla.com/api/courier-webhook.php?courier=steadfast`
+3. Set Auth Token (Bearer) to match what you entered in Step 3
+4. Save
+
+---
+
+## Features
+
+### Courier Settings Page (courier.php → Steadfast tab)
+- ✅ API Key / Secret Key / Webhook Token fields
+- ✅ Steadfast Login Credentials (email/password) for delivery rating
+-  Default Shipping Note
+- ✅ Active toggle + Send Product Names toggle
+- ✅ Test Connection button
+- ✅ Live Balance display with refresh
+- ✅ Order statistics (total/shipped/delivered/cancelled/success rate)
+- ✅ Webhook URL with copy button
+- ✅ Consignment Lookup tool
+- ✅ Recent Webhook Logs display
+- ✅ Quick links to Steadfast portal
+-  Bulk Sync All Orders button
+
+### Order Management (order-management.php)
+- ✅ Consignment ID displayed as clickable link (opens Steadfast portal)
+- ✅ Tracking code shown with courier name
+- ✅ Color-coded courier status (green=delivered, red=cancelled, yellow=hold, purple=in_review)
+- ✅ Bulk upload to Steadfast (uses enhanced uploadOrder with product names, logging)
+- ✅ Auto-migration for new DB columns on first load
+
+### Order View (order-view.php)
+- ✅ Clickable CID badge next to delivery method dropdown
+- ✅ Full Tracking Card showing: Courier, CID, Tracking Code, Status
+- ✅ Tracking message display (e.g. "Package arrived at sorting center")
+-  Delivery charge and COD amount
+-  Upload timestamp
+- ✅ "Upload to Steadfast" button (for non-uploaded orders)
+- ✅ "Sync Status" button (polls Steadfast API for latest status)
+- ✅ "Open Portal" link (opens CID in Steadfast dashboard)
+- ✅ "Customer Track" link (public tracking URL for customers)
+
+### Webhook Auto-Sync (courier-webhook.php)
+-  Handles both `delivery_status` and `tracking_update` notification types
+- ✅ Auto-updates order status (delivered, cancelled, hold, partial_delivered)
+- ✅ Stores tracking_message, delivery_charge, cod_amount
+- ✅ Bearer token authentication
+-  Prevents backward transitions (won't undo delivered/cancelled)
+- ✅ Awards store credits on delivery
+- ✅ Refunds credits on cancellation
+- ✅ File-based + Database logging for debugging
+- ✅ Status history logging
+
+### API Class (steadfast.php)
+-  All Steadfast API endpoints supported
+- ✅ uploadOrder() — single order with product names, logging, status history
+- ✅ bulkUploadOrders() — batch upload with individual fallback for small batches
+- ✅ syncOrderStatus() — polls API and updates our DB
+-  createReturnRequest() — submit return requests
+- ✅ getPayments() — payment history
+-  getBalance() — account balance
+- ✅ portalUrl() / trackingUrl() — URL helpers
+
+---
+
+## Status Mapping (Steadfast → Our System)
+| Steadfast Status | Our Status | Action |
+|---|---|---|
+| pending | (no change) | Logged only |
+| in_review | (no change) | Logged only |
+| delivered | delivered | Awards credits, sets delivered_at |
+| delivered_approval_pending | delivered | Same as delivered |
+| partial_delivered | partial_delivered | — |
+| cancelled | pending_cancel | Refunds credits |
+| cancelled_approval_pending | pending_cancel | Same as cancelled |
+| hold | on_hold | — |
+| unknown | (no change) | Logged only |
+
+
+# Steadfast Courier Full Integration
+## Deploy Date: 2026-02-17
+
+## What's Included
+
+### New Files (copy to server)
+- `public_html/api/steadfast.php` — Full Steadfast API class (create order, bulk, status check, balance, return requests, payments)
+- `public_html/api/steadfast-actions.php` — AJAX endpoint for admin panel (upload, sync, balance, settings, webhook logs)
+- `public_html/api/courier-webhook.php` — Enhanced webhook receiver (tracking_message, delivery_charge, DB logging)
+
+### Updated Files (REPLACE existing)
+- `public_html/admin/pages/courier.php` — Full Steadfast settings tab (API keys, login creds, webhook config, balance, stats, consignment lookup)
+- `public_html/admin/pages/order-management.php` — Clickable consignment ID links, color-coded courier status, auto-migration for new columns
+- `public_html/admin/pages/order-view.php` — Tracking card with upload button, sync status, portal links, customer tracking link
+
+### SQL Migration (run in phpMyAdmin if auto-migration fails)
+- `steadfast-migration.sql`
+
+---
+
+## Deployment Steps
+
+### Step 1: Run SQL Migration
+Open phpMyAdmin → Run `steadfast-migration.sql`
+(Or skip this — `order-management.php` has auto-migration that creates columns on first load)
+
+### Step 2: Upload via CyberPanel File Manager
+Extract the ZIP maintaining the folder structure. Files go to:
+```
+public_html/
+├── api/
+│   ├── steadfast.php          (NEW - replaces old)
+│   ├── steadfast-actions.php  (NEW)
+│   └── courier-webhook.php    (REPLACE)
+└── admin/pages/
+    ├─ courier.php            (REPLACE)
+    ├── order-management.php   (REPLACE)
+    └─ order-view.php         (REPLACE)
+```
+
+### Step 3: Configure in Admin Panel
+1. Go to **Admin  Courier → Steadfast** tab
+2. Enter your **API Key** and **Secret Key** from [portal.steadfast.com.bd/user/api](https://portal.steadfast.com.bd/user/api)
+3. Click **Test Connection** — should show your balance
+4. (Optional) Enter **Steadfast Login Email/Password** for delivery rating checks
+5. (Optional) Set **Webhook Bearer Token** and configure it in [Steadfast Webhook Settings](https://portal.steadfast.com.bd/user/webhook/add)
+6. Set **Default Shipping Note** if desired
+7. Toggle **Active** and **Send Product Names** as needed
+8. Click **Save Settings**
+
+### Step 4: Configure Webhook in Steadfast Portal
+1. Go to [portal.steadfast.com.bd → Webhook](https://portal.steadfast.com.bd/user/webhook/add)
+2. Set Callback URL: `https://khatibangla.com/api/courier-webhook.php?courier=steadfast`
+3. Set Auth Token (Bearer) to match what you entered in Step 3
+4. Save
+
+---
+
+## Features
+
+### Courier Settings Page (courier.php → Steadfast tab)
+- ✅ API Key / Secret Key / Webhook Token fields
+- ✅ Steadfast Login Credentials (email/password) for delivery rating
+- ✅ Default Shipping Note
+- ✅ Active toggle + Send Product Names toggle
+- ✅ Test Connection button
+-  Live Balance display with refresh
+- ✅ Order statistics (total/shipped/delivered/cancelled/success rate)
+- ✅ Webhook URL with copy button
+- ✅ Consignment Lookup tool
+- ✅ Recent Webhook Logs display
+- ✅ Quick links to Steadfast portal
+- ✅ Bulk Sync All Orders button
+
+### Order Management (order-management.php)
+- ✅ Consignment ID displayed as clickable link (opens Steadfast portal)
+- ✅ Tracking code shown with courier name
+- ✅ Color-coded courier status (green=delivered, red=cancelled, yellow=hold, purple=in_review)
+- ✅ Bulk upload to Steadfast (uses enhanced uploadOrder with product names, logging)
+- ✅ Auto-migration for new DB columns on first load
+
+### Order View (order-view.php)
+- ✅ Clickable CID badge next to delivery method dropdown
+- ✅ Full Tracking Card showing: Courier, CID, Tracking Code, Status
+- ✅ Tracking message display (e.g. "Package arrived at sorting center")
+- ✅ Delivery charge and COD amount
+- ✅ Upload timestamp
+- ✅ "Upload to Steadfast" button (for non-uploaded orders)
+- ✅ "Sync Status" button (polls Steadfast API for latest status)
+- ✅ "Open Portal" link (opens CID in Steadfast dashboard)
+- ✅ "Customer Track" link (public tracking URL for customers)
+
+### Webhook Auto-Sync (courier-webhook.php)
+- ✅ Handles both `delivery_status` and `tracking_update` notification types
+- ✅ Auto-updates order status (delivered, cancelled, hold, partial_delivered)
+- ✅ Stores tracking_message, delivery_charge, cod_amount
+- ✅ Bearer token authentication
+- ✅ Prevents backward transitions (won't undo delivered/cancelled)
+- ✅ Awards store credits on delivery
+- ✅ Refunds credits on cancellation
+- ✅ File-based + Database logging for debugging
+- ✅ Status history logging
+
+### API Class (steadfast.php)
+- ✅ All Steadfast API endpoints supported
+- ✅ uploadOrder() — single order with product names, logging, status history
+- ✅ bulkUploadOrders() — batch upload with individual fallback for small batches
+- ✅ syncOrderStatus()  polls API and updates our DB
+- ✅ createReturnRequest() — submit return requests
+- ✅ getPayments() — payment history
+- ✅ getBalance() — account balance
+- ✅ portalUrl() / trackingUrl() — URL helpers
+
+---
+
+## Status Mapping (Steadfast → Our System)
+| Steadfast Status | Our Status | Action |
+|---|---|---|
+| pending | (no change) | Logged only |
+| in_review | (no change) | Logged only |
+| delivered | delivered | Awards credits, sets delivered_at |
+| delivered_approval_pending | delivered | Same as delivered |
+| partial_delivered | partial_delivered | — |
+| cancelled | pending_cancel | Refunds credits |
+| cancelled_approval_pending | pending_cancel | Same as cancelled |
+| hold | on_hold | — |
+| unknown | (no change) | Logged only |
+
+##blog update
+# Blog System v2 — Installation Guide
+
+## Files in this package
+
+| File | Action | What Changed |
+|------|--------|-------------|
+| `blog-migration.sql` | Run in phpMyAdmin | Creates blog_posts + blog_categories tables |
+| `public_html/admin/pages/blog.php` | NEW file | Full blog admin panel |
+| `public_html/admin/pages/settings.php` | REPLACE | Added Timezone & Date/Time settings |
+| `public_html/includes/functions.php` | REPLACE | Added timezone auto-initialization |
+| `public_html/pages/blog.php` | NEW file | Blog listing page |
+| `public_html/pages/blog-single.php` | NEW file | Single post with 4 templates |
+| `public_html/index.php` | REPLACE | Blog routes already added |
+| `public_html/admin/includes/header.php` | REPLACE | Blog Posts sidebar link |
+| `public_html/includes/footer.php` | REPLACE | Blog footer link |
+
+## Installation Steps
+
+1. **Upload** all `public_html/` contents to your server's `public_html/` directory
+2. **Run SQL** — Open phpMyAdmin, select your database, run `blog-migration.sql`
+3. **Set Timezone** — Go to Admin → Settings → General tab → set your timezone
+4. Tables auto-create on first admin visit if SQL wasn't run
+
+## What was fixed (v2)
+
+- **Link insertion** — Now uses `insertHTML` with proper anchor tag generation
+- **Image picker** — Opens server Media Gallery (same as Media Gallery page) instead of URL prompt
+- **Delete Block button** — Click any image/video/embed in editor, then press 🗑 Delete Block
+- **Template designs** — Changed from ENUM to VARCHAR column; auto-fixes existing ENUM tables
+- **Timezone** — New section in Settings → General with 40+ timezones + date/time format
+- **PHP 8+ safe** — All `??` null coalescing, `COALESCE()` in SQL, `intval()` wrappers
 
 ## License
 Private / Commercial Use

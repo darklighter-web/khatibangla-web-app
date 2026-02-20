@@ -74,6 +74,27 @@ $cb = [
 ];
 $cbConnected = !empty($cb['api_key']);
 
+// RedX settings
+$rx = [
+    'api_token'     => getSetting('redx_api_token',''),
+    'environment'   => getSetting('redx_environment','production'),
+    'webhook_token' => getSetting('redx_webhook_token',''),
+];
+$rxConnected = !empty($rx['api_token']);
+$rxActive = getSetting('redx_active','1');
+$rxDefaultNote = getSetting('redx_default_note','');
+$rxDefaultWeight = getSetting('redx_default_weight','500');
+$rxSendProducts = getSetting('redx_send_product_names','1');
+$rxDefaultPickupStore = getSetting('redx_default_pickup_store_id','');
+
+// RedX stats
+$rxStats = ['total'=>0,'shipped'=>0,'delivered'=>0,'cancelled'=>0];
+try {
+    $rs = $db->fetch("SELECT COUNT(*) as total, SUM(CASE WHEN order_status='shipped' THEN 1 ELSE 0 END) as shipped, SUM(CASE WHEN order_status='delivered' THEN 1 ELSE 0 END) as delivered, SUM(CASE WHEN order_status IN ('cancelled','pending_cancel') THEN 1 ELSE 0 END) as cancelled FROM orders WHERE (LOWER(courier_name) LIKE '%redx%' OR LOWER(shipping_method) LIKE '%redx%')");
+    if ($rs) $rxStats = $rs;
+} catch (\Throwable $e) {}
+$rxRate = intval($rxStats['total'])>0 ? round(intval($rxStats['delivered'])/intval($rxStats['total'])*100) : 0;
+
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
@@ -83,7 +104,7 @@ require_once __DIR__ . '/../includes/header.php';
 
 <!-- TABS -->
 <div class="flex flex-wrap gap-2 mb-6">
-    <?php foreach(['pathao'=>'🚀 Pathao API','steadfast'=>'📦 Steadfast','carrybee'=>'🐝 CarryBee','webhooks'=>'🔗 Webhooks','customer_check'=>'🔍 Customer Verify','area_map'=>'📊 Area Analytics','providers'=>'📦 Providers','shipments'=>'🚚 Shipments'] as $k=>$v): ?>
+    <?php foreach(['pathao'=>'🚀 Pathao API','steadfast'=>'📦 Steadfast','redx'=>'🔴 RedX','carrybee'=>'🐝 CarryBee','webhooks'=>'🔗 Webhooks','customer_check'=>'🔍 Customer Verify','area_map'=>'📊 Area Analytics','providers'=>'📦 Providers','shipments'=>'🚚 Shipments'] as $k=>$v): ?>
     <a href="?tab=<?=$k?>" class="px-4 py-2 rounded-lg text-sm font-medium <?=$tab===$k?'tab-on':'bg-gray-100 text-gray-600 hover:bg-gray-200'?>"><?=$v?></a>
     <?php endforeach; ?>
 </div>
@@ -273,7 +294,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <div class="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center"><span class="text-2xl font-bold text-green-600">S</span></div>
                     <div>
                         <h3 class="font-bold text-gray-800 text-lg">Steadfast Courier API</h3>
-                        <p class="text-xs text-gray-500">Get credentials from <a href="https://portal.steadfast.com.bd/user/api" target="_blank" class="text-blue-600 underline">portal.steadfast.com.bd → API</a></p>
+                        <p class="text-xs text-gray-500">Get credentials from <a href="https://portal.packzy.com/user/api" target="_blank" class="text-blue-600 underline">portal.packzy.com → API</a></p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2 px-3 py-1.5 rounded-full <?=$sfConnected?'bg-green-50 border border-green-200':'bg-gray-50 border'?>">
@@ -284,24 +305,36 @@ require_once __DIR__ . '/../includes/header.php';
 
             <!-- API Credentials -->
             <div class="bg-gray-50 rounded-xl p-5 mb-5 border border-dashed border-gray-300">
-                <h4 class="text-sm font-semibold text-gray-700 mb-3">🔑 API Credentials</h4>
+                <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center justify-between">
+                    <span>🔑 API Credentials</span>
+                    <button type="button" id="sf_toggle_all_btn" onclick="sfToggleAll()" class="text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-full border border-blue-200 transition-colors">👁 Show All</button>
+                </h4>
                 <div class="grid md:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-medium text-gray-600 mb-1">API Key <span class="text-red-500">*</span></label>
-                        <input type="text" id="sf_api_key" value="<?=e($sf['api_key'])?>" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono bg-white" placeholder="Your Steadfast API Key">
+                        <div class="relative">
+                            <input type="password" id="sf_api_key" value="<?=e($sf['api_key'])?>" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono bg-white pr-10" placeholder="Your Steadfast API Key">
+                            <button type="button" onclick="sfTogglePw(this)" class="sf-pw-toggle absolute right-2 top-2 text-gray-400 hover:text-gray-600" title="Show"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                        </div>
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-gray-600 mb-1">Secret Key <span class="text-red-500">*</span></label>
                         <div class="relative">
                             <input type="password" id="sf_secret_key" value="<?=e($sf['secret_key'])?>" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono bg-white pr-10" placeholder="Your Steadfast Secret Key">
-                            <button type="button" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password'" class="absolute right-2 top-2.5 text-gray-400 hover:text-gray-600 text-sm">👁</button>
+                            <button type="button" onclick="sfTogglePw(this)" class="sf-pw-toggle absolute right-2 top-2 text-gray-400 hover:text-gray-600" title="Show"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
                         </div>
                     </div>
                 </div>
                 <div class="mt-4">
                     <label class="block text-xs font-medium text-gray-600 mb-1">Webhook Bearer Token</label>
-                    <input type="text" id="sf_webhook_token" value="<?=e($sf['webhook_token'])?>" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono bg-white" placeholder="Token for webhook authentication (optional)">
-                    <p class="text-[10px] text-gray-400 mt-1">Set this in <a href="https://portal.steadfast.com.bd/user/webhook/add" target="_blank" class="text-blue-500 underline">Steadfast Webhook Settings</a> → Auth Token (Bearer)</p>
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <input type="password" id="sf_webhook_token" value="<?=e($sf['webhook_token'])?>" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono bg-white pr-10" placeholder="Token for webhook authentication">
+                            <button type="button" onclick="sfTogglePw(this)" class="sf-pw-toggle absolute right-2 top-2 text-gray-400 hover:text-gray-600" title="Show"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                        </div>
+                        <button type="button" onclick="sfGenToken()" class="px-3 py-2 bg-gray-100 border rounded-lg text-xs hover:bg-gray-200 whitespace-nowrap" title="Generate a random token">🔑 Generate</button>
+                    </div>
+                    <p class="text-[10px] text-gray-400 mt-1">Auto-generate a token, save settings, then paste the same token in <a href="https://portal.packzy.com/user/webhook/add" target="_blank" class="text-blue-500 underline">Steadfast Webhook Settings</a> → Auth Token (Bearer)</p>
                 </div>
             </div>
 
@@ -317,7 +350,10 @@ require_once __DIR__ . '/../includes/header.php';
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-gray-600 mb-1">Steadfast Account Password</label>
-                        <input type="password" id="sf_password" value="<?=e($sfPass)?>" class="w-full px-3 py-2.5 border rounded-lg text-sm bg-white" placeholder="Enter your Steadfast password">
+                        <div class="relative">
+                            <input type="password" id="sf_password" value="<?=e($sfPass)?>" class="w-full px-3 py-2.5 border rounded-lg text-sm bg-white pr-10" placeholder="Enter your Steadfast password">
+                            <button type="button" onclick="sfTogglePw(this)" class="sf-pw-toggle absolute right-2 top-2 text-gray-400 hover:text-gray-600" title="Show"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                        </div>
                         <p class="text-[10px] text-gray-400 mt-0.5">Your Steadfast portal login password</p>
                     </div>
                 </div>
@@ -355,7 +391,7 @@ require_once __DIR__ . '/../includes/header.php';
         <!-- Webhook Info -->
         <div class="bg-white rounded-xl shadow-sm border p-6">
             <h4 class="text-sm font-bold text-gray-800 mb-3">🔗 Webhook Configuration</h4>
-            <p class="text-xs text-gray-500 mb-3">Set this URL in your <a href="https://portal.steadfast.com.bd/user/webhook/add" target="_blank" class="text-blue-600 underline">Steadfast Webhook Settings</a>:</p>
+            <p class="text-xs text-gray-500 mb-3">Set this URL in your <a href="https://portal.packzy.com/user/webhook/add" target="_blank" class="text-blue-600 underline">Steadfast Webhook Settings</a>:</p>
             <div class="bg-blue-50 rounded-lg border border-blue-200 p-3">
                 <div class="flex items-center justify-between mb-1">
                     <span class="text-xs font-semibold text-blue-700">Callback URL</span>
@@ -407,10 +443,10 @@ require_once __DIR__ . '/../includes/header.php';
         <div class="bg-white rounded-xl shadow-sm border p-6">
             <h4 class="text-sm font-bold text-gray-800 mb-3">🔗 Quick Links</h4>
             <div class="space-y-2">
-                <a href="https://portal.steadfast.com.bd" target="_blank" class="block text-xs text-blue-600 hover:underline">📦 Steadfast Portal</a>
-                <a href="https://portal.steadfast.com.bd/user/api" target="_blank" class="block text-xs text-blue-600 hover:underline">🔑 API Settings</a>
-                <a href="https://portal.steadfast.com.bd/user/webhook/add" target="_blank" class="block text-xs text-blue-600 hover:underline">🔗 Webhook Settings</a>
-                <a href="https://portal.steadfast.com.bd/user/consignments" target="_blank" class="block text-xs text-blue-600 hover:underline">📋 All Consignments</a>
+                <a href="https://portal.packzy.com" target="_blank" class="block text-xs text-blue-600 hover:underline">📦 Steadfast Portal</a>
+                <a href="https://portal.packzy.com/user/api" target="_blank" class="block text-xs text-blue-600 hover:underline">🔑 API Settings</a>
+                <a href="https://portal.packzy.com/user/webhook/add" target="_blank" class="block text-xs text-blue-600 hover:underline">🔗 Webhook Settings</a>
+                <a href="https://portal.packzy.com/user/consignments" target="_blank" class="block text-xs text-blue-600 hover:underline">📋 All Consignments</a>
             </div>
         </div>
 
@@ -426,13 +462,313 @@ require_once __DIR__ . '/../includes/header.php';
 var SF_API = '<?=SITE_URL?>/api/steadfast-actions.php';
 function sfPost(a,d){return fetch(SF_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action:a},d||{}))}).then(function(r){return r.json()})}
 function sfMsg(m,ok){var e=document.getElementById('sf_result');e.classList.remove('hidden');e.className='mt-3 p-3 rounded-lg text-sm '+(ok?'bg-green-50 text-green-700 border border-green-200':'bg-red-50 text-red-700 border border-red-200');e.textContent=(ok?'✅ ':'❌ ')+m}
+var _eyeOpen='<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+var _eyeClosed='<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+function sfTogglePw(btn){var inp=btn.closest('.relative').querySelector('input');if(!inp)return;var show=inp.type==='password';inp.type=show?'text':'password';btn.innerHTML=show?_eyeClosed:_eyeOpen;btn.title=show?'Hide':'Show'}
+function sfToggleAll(){var fields=document.querySelectorAll('.sf-pw-toggle');var anyHidden=false;fields.forEach(function(btn){var inp=btn.closest('.relative').querySelector('input');if(inp&&inp.type==='password')anyHidden=true});fields.forEach(function(btn){var inp=btn.closest('.relative').querySelector('input');if(!inp)return;if(anyHidden){inp.type='text';btn.innerHTML=_eyeClosed;btn.title='Hide'}else{inp.type='password';btn.innerHTML=_eyeOpen;btn.title='Show'}});var ab=document.getElementById('sf_toggle_all_btn');if(ab)ab.textContent=anyHidden?'🙈 Hide All':'👁 Show All'}
 function sfSaveSettings(){sfPost('save_settings',{api_key:document.getElementById('sf_api_key').value,secret_key:document.getElementById('sf_secret_key').value,webhook_token:document.getElementById('sf_webhook_token').value,email:document.getElementById('sf_email').value,password:document.getElementById('sf_password').value,default_note:document.getElementById('sf_default_note').value,send_product_names:document.getElementById('sf_send_products').checked?'1':'0',active:document.getElementById('sf_active').checked?'1':'0'}).then(function(d){sfMsg(d.message||'Saved!',d.success!==false);if(d.success!==false)setTimeout(function(){location.reload()},1200)}).catch(function(e){sfMsg(e.message,false)})}
 function sfTestConnection(){sfPost('test_connection',{api_key:document.getElementById('sf_api_key').value,secret_key:document.getElementById('sf_secret_key').value}).then(function(d){if(d.success){sfMsg('Connected! Balance: ৳'+Number(d.balance).toLocaleString(),true);document.getElementById('sf-balance').textContent='৳'+Number(d.balance).toLocaleString()}else sfMsg(d.error||'Connection failed',false)}).catch(function(e){sfMsg(e.message,false)})}
 function sfCheckBalance(){sfPost('check_balance').then(function(d){if(d.success){document.getElementById('sf-balance').textContent='৳'+Number(d.balance).toLocaleString();sfMsg('Balance: ৳'+Number(d.balance).toLocaleString(),true)}else sfMsg(d.error||'Failed',false)}).catch(function(e){sfMsg(e.message,false)})}
 function sfSyncAll(){sfMsg('Syncing...',true);sfPost('bulk_sync',{limit:50}).then(function(d){sfMsg('Synced '+(d.total||0)+' orders: '+(d.updated||0)+' updated, '+(d.errors||0)+' errors',!d.errors)}).catch(function(e){sfMsg(e.message,false)})}
-function sfLookup(){var c=document.getElementById('sf_lookup_cid').value.trim();if(!c)return;var e=document.getElementById('sf_lookup_result');e.classList.remove('hidden');e.className='mt-3 p-3 rounded-lg text-sm bg-blue-50 text-blue-700';e.textContent='🔍 Searching...';sfPost('check_consignment',{consignment_id:c}).then(function(d){if(d.success&&d.data){var i=d.data;e.innerHTML='<b>CID: '+(i.consignment_id||c)+'</b><br>Status: <b>'+(i.delivery_status||'?')+'</b> | Invoice: '+(i.invoice||'—')+' | COD: ৳'+(i.cod_amount||0)+(i.tracking_message?'<br>📍 '+i.tracking_message:'')+'<br><a href="https://portal.steadfast.com.bd/find-consignment?consignment_id='+(i.consignment_id||c)+'" target="_blank" class="text-blue-600 underline text-xs">Open in Steadfast →</a>'}else{e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+(d.error||'Not found')}}).catch(function(x){e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+x.message})}
+function sfGenToken(){var s='kb-sf-';for(var i=0;i<24;i++)s+='0123456789abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random()*36)];var inp=document.getElementById('sf_webhook_token');inp.value=s;inp.type='text';sfMsg('Token generated! Click "Save Settings" then copy the same token to Steadfast webhook settings.',true)}
+function sfLookup(){var c=document.getElementById('sf_lookup_cid').value.trim();if(!c)return;var e=document.getElementById('sf_lookup_result');e.classList.remove('hidden');e.className='mt-3 p-3 rounded-lg text-sm bg-blue-50 text-blue-700';e.textContent='🔍 Searching...';sfPost('check_consignment',{consignment_id:c}).then(function(d){if(d.success&&d.data){var i=d.data;e.innerHTML='<b>CID: '+(i.consignment_id||c)+'</b><br>Status: <b>'+(i.delivery_status||'?')+'</b> | Invoice: '+(i.invoice||'—')+' | COD: ৳'+(i.cod_amount||0)+(i.tracking_message?'<br>📍 '+i.tracking_message:'')+'<br><a href="https://steadfast.com.bd/user/consignment/'+(i.consignment_id||c)+'" target="_blank" class="text-blue-600 underline text-xs">Open in Steadfast →</a>'}else{e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+(d.error||'Not found')}}).catch(function(x){e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+x.message})}
 // Load webhook logs
 sfPost('webhook_logs',{limit:10}).then(function(d){var e=document.getElementById('sf-wh-logs');if(d.logs&&d.logs.length){e.innerHTML=d.logs.map(function(l){var p='';try{var j=JSON.parse(l.payload);p=(j.status||j.notification_type||'')+' '+(j.invoice||'')}catch(x){}return '<div class="py-1 border-b border-gray-100"><span class="text-gray-400">'+(l.created_at||'').substring(5,16)+'</span> '+p+(l.result?' → <b>'+l.result.substring(0,50)+'</b>':'')+'</div>'}).join('')}else e.innerHTML='<p class="text-gray-400">No webhook logs yet</p>'}).catch(function(){document.getElementById('sf-wh-logs').innerHTML='<p class="text-gray-400">—</p>'});
+</script>
+
+
+<?php elseif ($tab === 'redx'): ?>
+<!-- ========================================= -->
+<!-- REDX API — FULL INTEGRATION -->
+<!-- ========================================= -->
+<div class="grid lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Connection Card -->
+        <div class="bg-white rounded-xl shadow-sm border p-6">
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center"><span class="text-2xl font-bold text-red-500">R</span></div>
+                    <div>
+                        <h3 class="font-bold text-gray-800 text-lg">RedX Delivery API</h3>
+                        <p class="text-xs text-gray-500">Get credentials from <a href="https://redx.com.bd/developer-api/" target="_blank" class="text-blue-600 underline">redx.com.bd → Developer API</a></p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full <?=$rxConnected?'bg-green-50 border border-green-200':'bg-gray-50 border'?>">
+                    <span class="w-2.5 h-2.5 rounded-full <?=$rxConnected?'bg-green-500 pulse-d':'bg-gray-300'?>"></span>
+                    <span class="text-xs font-semibold <?=$rxConnected?'text-green-700':'text-gray-500'?>"><?=$rxConnected?'Connected':'Disconnected'?></span>
+                </div>
+            </div>
+
+            <!-- API Token -->
+            <div class="bg-gray-50 rounded-xl p-5 mb-5 border border-dashed border-gray-300">
+                <h4 class="text-sm font-semibold text-gray-700 mb-3">🔑 API Credentials</h4>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">API Access Token <span class="text-red-500">*</span></label>
+                    <div class="relative">
+                        <input type="password" id="rx_api_token" value="<?=e($rx['api_token'])?>" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono bg-white pr-10" placeholder="Your RedX API token from developer portal">
+                        <button type="button" onclick="sfTogglePw(this)" class="sf-pw-toggle absolute right-2 top-2 text-gray-400 hover:text-gray-600" title="Show"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    </div>
+                    <p class="text-[10px] text-gray-400 mt-1">Copy the production token from <a href="https://redx.com.bd/developer-api/" target="_blank" class="text-blue-500 underline">RedX Developer API page</a></p>
+                </div>
+
+                <div class="mt-4">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Environment</label>
+                    <select id="rx_environment" class="w-full px-3 py-2.5 border rounded-lg text-sm bg-white">
+                        <option value="production" <?=$rx['environment']==='production'?'selected':''?>>🟢 Production (Live)</option>
+                        <option value="sandbox" <?=$rx['environment']==='sandbox'?'selected':''?>>🟡 Sandbox (Testing)</option>
+                    </select>
+                </div>
+
+                <div class="mt-4">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Webhook Token</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="rx_webhook_token" value="<?=e($rx['webhook_token'])?>" class="flex-1 px-3 py-2.5 border rounded-lg text-sm font-mono bg-white" placeholder="Secret token for webhook verification">
+                        <button onclick="rxGenerateToken()" class="px-3 py-2 bg-gray-100 border rounded-lg text-xs hover:bg-gray-200" title="Generate random token">🔑</button>
+                    </div>
+                    <p class="text-[10px] text-gray-400 mt-1">This token will be appended to your webhook URL as <code class="bg-gray-100 px-1 rounded">?courier=redx&token=YOUR_TOKEN</code></p>
+                </div>
+            </div>
+
+            <!-- Default Settings -->
+            <div class="bg-blue-50 rounded-xl p-5 mb-5 border border-dashed border-blue-200">
+                <h4 class="text-sm font-semibold text-blue-700 mb-3">📦 Default Parcel Settings</h4>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Default Pickup Store ID</label>
+                        <input type="text" id="rx_default_pickup_store_id" value="<?=e($rxDefaultPickupStore)?>" class="w-full px-3 py-2.5 border rounded-lg text-sm bg-white" placeholder="e.g. 1">
+                        <p class="text-[10px] text-gray-400 mt-0.5">Click "Load Stores" to find your store IDs</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Default Parcel Weight (grams)</label>
+                        <input type="number" id="rx_default_weight" value="<?=e($rxDefaultWeight)?>" class="w-full px-3 py-2.5 border rounded-lg text-sm bg-white" placeholder="500" min="100" step="50">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Default Note -->
+            <div class="mb-5">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Default Shipping Note</label>
+                <textarea id="rx_default_note" rows="2" class="w-full px-3 py-2.5 border rounded-lg text-sm bg-white" placeholder="Default instruction sent with every parcel"><?=e($rxDefaultNote)?></textarea>
+                <p class="text-[10px] text-gray-400 mt-1">এই নোটটি প্রতিটি অর্ডারের সাথে RedX-এর কাছে ডেলিভারি ইনস্ট্রাকশন হিসেবে যাবে</p>
+            </div>
+
+            <!-- Toggles -->
+            <div class="space-y-3 mb-5">
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                    <div><span class="text-sm font-medium text-gray-800">Active</span><p class="text-[10px] text-gray-500">Enable RedX as a delivery option</p></div>
+                    <label class="relative inline-block w-11 h-6 cursor-pointer"><input type="checkbox" id="rx_active" <?=$rxActive==='1'?'checked':''?> class="sr-only peer"><div class="w-11 h-6 bg-gray-300 peer-checked:bg-green-500 rounded-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-5 after:h-5 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-5"></div></label>
+                </div>
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                    <div><span class="text-sm font-medium text-gray-800">Send Product Names</span><p class="text-[10px] text-gray-500">Include product names as parcel instruction</p></div>
+                    <label class="relative inline-block w-11 h-6 cursor-pointer"><input type="checkbox" id="rx_send_products" <?=$rxSendProducts!=='0'?'checked':''?> class="sr-only peer"><div class="w-11 h-6 bg-gray-300 peer-checked:bg-green-500 rounded-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-5 after:h-5 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-5"></div></label>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex flex-wrap gap-3">
+                <button onclick="rxSaveSettings()" class="bg-red-600 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-red-700">💾 Save Settings</button>
+                <button onclick="rxTestConnection()" class="bg-gray-100 text-gray-700 px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-200 border">🔌 Test Connection</button>
+                <button onclick="rxLoadStores()" class="bg-blue-50 text-blue-700 px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-100 border border-blue-200">🏪 Load Stores</button>
+                <button onclick="rxSyncAll()" class="bg-purple-50 text-purple-700 px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-purple-100 border border-purple-200">🔄 Sync All Orders</button>
+            </div>
+            <div id="rx_result" class="hidden mt-3 p-3 rounded-lg text-sm"></div>
+
+            <!-- Pickup Stores List -->
+            <div id="rx_stores_panel" class="hidden mt-5">
+                <h4 class="text-sm font-bold text-gray-800 mb-2">🏪 Your Pickup Stores</h4>
+                <div id="rx_stores_list" class="space-y-2"></div>
+            </div>
+        </div>
+
+        <!-- Parcel Lookup -->
+        <div class="bg-white rounded-xl shadow-sm border p-6">
+            <h4 class="text-sm font-bold text-gray-800 mb-3">🔍 Track / Lookup Parcel</h4>
+            <div class="flex gap-2">
+                <input type="text" id="rx_lookup_tid" class="flex-1 px-3 py-2.5 border rounded-lg text-sm font-mono" placeholder="Enter RedX Tracking ID">
+                <button onclick="rxLookup()" class="bg-red-600 text-white px-5 py-2 rounded-lg text-sm hover:bg-red-700">🔍 Track</button>
+                <button onclick="rxGetInfo()" class="bg-gray-100 text-gray-700 px-5 py-2 rounded-lg text-sm hover:bg-gray-200 border">📋 Info</button>
+            </div>
+            <div id="rx_lookup_result" class="hidden mt-3 p-3 rounded-lg text-sm"></div>
+        </div>
+
+        <!-- Webhook URL -->
+        <div class="bg-white rounded-xl shadow-sm border p-6">
+            <h4 class="text-sm font-bold text-gray-800 mb-3">🔗 Webhook Configuration</h4>
+            <p class="text-xs text-gray-500 mb-3">Paste this URL into RedX developer portal → Webhook section → Callback URL, then click "Save Link"</p>
+            <?php
+                $rxWhUrl = SITE_URL . '/api/redx-webhook.php' . (!empty($rx['webhook_token']) ? '?token=' . urlencode($rx['webhook_token']) : '');
+            ?>
+            <div class="flex gap-2">
+                <code id="rx-wh-url" class="flex-1 block text-sm font-mono text-gray-800 bg-gray-50 px-4 py-3 rounded-lg border break-all select-all"><?= e($rxWhUrl) ?></code>
+                <button onclick="navigator.clipboard.writeText(document.getElementById('rx-wh-url').textContent).then(()=>this.textContent='✅ Copied').catch(()=>{})" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 whitespace-nowrap">📋 Copy</button>
+            </div>
+            <div class="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700">
+                <p class="font-semibold mb-1">⚠️ Setup Steps:</p>
+                <p>1. Go to <a href="https://redx.com.bd/developer-api/" target="_blank" class="text-blue-600 underline">redx.com.bd/developer-api</a></p>
+                <p>2. Scroll down to "Webhook" section</p>
+                <p>3. Paste the callback URL above and click "Save Link"</p>
+                <p>4. RedX will send POST requests to this URL whenever parcel status changes</p>
+            </div>
+
+            <!-- Status Mapping Reference -->
+            <div class="mt-4">
+                <button onclick="document.getElementById('rx-status-ref').classList.toggle('hidden')" class="text-xs text-blue-600 hover:underline">📋 Show Status Mapping Reference</button>
+                <div id="rx-status-ref" class="hidden mt-2 bg-gray-50 rounded-lg p-3 text-xs">
+                    <table class="w-full">
+                        <thead><tr class="text-left text-gray-500 border-b"><th class="py-1">RedX Status</th><th class="py-1">→ Our Status</th><th class="py-1">Meaning</th></tr></thead>
+                        <tbody class="text-gray-700">
+                            <tr class="border-b"><td class="py-1"><code>ready-for-delivery</code></td><td>—</td><td>Parcel received from merchant</td></tr>
+                            <tr class="border-b"><td class="py-1"><code>delivery-in-progress</code></td><td>—</td><td>Dispatched to rider</td></tr>
+                            <tr class="border-b"><td class="py-1"><code>delivered</code></td><td class="text-green-600 font-bold">delivered</td><td>Delivered by rider</td></tr>
+                            <tr class="border-b"><td class="py-1"><code>agent-hold</code></td><td class="text-yellow-600 font-bold">on_hold</td><td>On hold with agent</td></tr>
+                            <tr class="border-b"><td class="py-1"><code>agent-returning</code></td><td class="text-orange-600 font-bold">pending_return</td><td>Return in progress</td></tr>
+                            <tr class="border-b"><td class="py-1"><code>returned</code></td><td class="text-red-600 font-bold">pending_return</td><td>Parcel returned</td></tr>
+                            <tr><td class="py-1"><code>agent-area-change</code></td><td>—</td><td>Area change requested</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Sidebar -->
+    <div class="space-y-6">
+        <!-- Stats -->
+        <div class="bg-white rounded-xl shadow-sm border p-6">
+            <h4 class="text-sm font-bold text-gray-800 mb-3">📊 RedX Orders</h4>
+            <div class="space-y-2">
+                <div class="flex justify-between text-sm"><span class="text-gray-600">Total Uploaded</span><b><?= number_format(intval($rxStats['total'])) ?></b></div>
+                <div class="flex justify-between text-sm"><span class="text-gray-600">In Transit</span><b class="text-blue-600"><?= number_format(intval($rxStats['shipped'])) ?></b></div>
+                <div class="flex justify-between text-sm"><span class="text-gray-600">Delivered</span><b class="text-green-600"><?= number_format(intval($rxStats['delivered'])) ?></b></div>
+                <div class="flex justify-between text-sm"><span class="text-gray-600">Cancelled</span><b class="text-red-600"><?= number_format(intval($rxStats['cancelled'])) ?></b></div>
+                <div class="h-2 bg-gray-100 rounded-full mt-2"><div class="h-full bg-red-500 rounded-full" style="width:<?= min(100,$rxRate) ?>%"></div></div>
+                <div class="text-center text-xs font-bold <?=$rxRate>=70?'text-green-600':($rxRate>=40?'text-yellow-600':'text-red-600')?>">Success Rate: <?= $rxRate ?>%</div>
+            </div>
+        </div>
+
+        <!-- Quick Links -->
+        <div class="bg-white rounded-xl shadow-sm border p-6">
+            <h4 class="text-sm font-bold text-gray-800 mb-3">🔗 Quick Links</h4>
+            <div class="space-y-2">
+                <a href="https://redx.com.bd" target="_blank" class="block text-xs text-blue-600 hover:underline">📦 RedX Dashboard</a>
+                <a href="https://redx.com.bd/developer-api/" target="_blank" class="block text-xs text-blue-600 hover:underline">🔑 Developer API Portal</a>
+                <a href="https://redx.com.bd/track-parcel" target="_blank" class="block text-xs text-blue-600 hover:underline">📍 Track Parcel (Public)</a>
+            </div>
+        </div>
+
+        <!-- Recent Webhook Logs -->
+        <div class="bg-white rounded-xl shadow-sm border p-6">
+            <h4 class="text-sm font-bold text-gray-800 mb-3">📝 Recent Webhooks</h4>
+            <div id="rx-wh-logs" class="space-y-1 text-xs text-gray-500 max-h-48 overflow-auto">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+var RX_API = '<?=SITE_URL?>/api/redx-actions.php';
+function rxPost(a,d){return fetch(RX_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action:a},d||{}))}).then(function(r){return r.json()})}
+function rxMsg(m,ok){var e=document.getElementById('rx_result');e.classList.remove('hidden');e.className='mt-3 p-3 rounded-lg text-sm '+(ok?'bg-green-50 text-green-700 border border-green-200':'bg-red-50 text-red-700 border border-red-200');e.textContent=(ok?'✅ ':'❌ ')+m}
+
+function rxSaveSettings(){
+    rxPost('save_settings',{
+        api_token: document.getElementById('rx_api_token').value,
+        environment: document.getElementById('rx_environment').value,
+        webhook_token: document.getElementById('rx_webhook_token').value,
+        default_pickup_store_id: document.getElementById('rx_default_pickup_store_id').value,
+        default_weight: document.getElementById('rx_default_weight').value,
+        default_note: document.getElementById('rx_default_note').value,
+        send_product_names: document.getElementById('rx_send_products').checked?'1':'0',
+        active: document.getElementById('rx_active').checked?'1':'0'
+    }).then(function(d){rxMsg(d.message||'Saved!',d.success!==false);if(d.success!==false)setTimeout(function(){location.reload()},1200)}).catch(function(e){rxMsg(e.message,false)})
+}
+
+function rxTestConnection(){
+    rxMsg('Testing connection...',true);
+    rxPost('test_connection',{
+        api_token: document.getElementById('rx_api_token').value,
+        environment: document.getElementById('rx_environment').value
+    }).then(function(d){
+        if(d.success){
+            rxMsg(d.message||'Connected!',true);
+            if(d.pickup_stores&&d.pickup_stores.length) rxRenderStores(d.pickup_stores);
+        } else rxMsg(d.error||'Connection failed',false)
+    }).catch(function(e){rxMsg(e.message,false)})
+}
+
+function rxLoadStores(){
+    rxPost('get_pickup_stores').then(function(d){
+        if(d.success&&d.data){
+            var stores=d.data.pickup_stores||[];
+            rxRenderStores(stores);
+            rxMsg('Found '+stores.length+' pickup store(s)',true);
+        }else rxMsg(d.error||'Failed to load stores',false)
+    }).catch(function(e){rxMsg(e.message,false)})
+}
+
+function rxRenderStores(stores){
+    var panel=document.getElementById('rx_stores_panel');
+    var list=document.getElementById('rx_stores_list');
+    panel.classList.remove('hidden');
+    if(!stores.length){list.innerHTML='<p class="text-gray-400 text-xs">No pickup stores found</p>';return}
+    list.innerHTML=stores.map(function(s){
+        return '<div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">'+
+            '<div><b class="text-sm">'+s.name+'</b><br><span class="text-xs text-gray-500">ID: '+s.id+' | '+s.address+' | '+(s.area_name||'')+'</span></div>'+
+            '<button onclick="document.getElementById(\'rx_default_pickup_store_id\').value=\''+s.id+'\'" class="px-3 py-1.5 bg-red-50 text-red-600 rounded text-xs hover:bg-red-100 border border-red-200">Use This</button>'+
+        '</div>'
+    }).join('')
+}
+
+function rxSyncAll(){
+    rxMsg('Syncing RedX orders...',true);
+    rxPost('bulk_sync',{limit:50}).then(function(d){
+        rxMsg('Synced '+(d.total||0)+' orders: '+(d.updated||0)+' updated, '+(d.errors||0)+' errors',!(d.errors>0))
+    }).catch(function(e){rxMsg(e.message,false)})
+}
+
+function rxLookup(){
+    var tid=document.getElementById('rx_lookup_tid').value.trim();if(!tid)return;
+    var e=document.getElementById('rx_lookup_result');
+    e.classList.remove('hidden');e.className='mt-3 p-3 rounded-lg text-sm bg-blue-50 text-blue-700';e.textContent='🔍 Tracking...';
+    rxPost('track_parcel',{tracking_id:tid}).then(function(d){
+        if(d.success&&d.data&&d.data.tracking){
+            var items=d.data.tracking;
+            e.innerHTML='<b>Tracking: '+tid+'</b> ('+items.length+' events)<div class="mt-2 space-y-1 max-h-40 overflow-auto">'+
+                items.map(function(t){return '<div class="py-1 border-b border-blue-100"><span class="text-gray-400 text-xs">'+(t.time||'').substring(0,16).replace('T',' ')+'</span> '+t.message_en+'</div>'}).join('')+'</div>';
+        }else{e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+(d.error||'Not found')}
+    }).catch(function(x){e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+x.message})
+}
+
+function rxGetInfo(){
+    var tid=document.getElementById('rx_lookup_tid').value.trim();if(!tid)return;
+    var e=document.getElementById('rx_lookup_result');
+    e.classList.remove('hidden');e.className='mt-3 p-3 rounded-lg text-sm bg-blue-50 text-blue-700';e.textContent='🔍 Loading...';
+    rxPost('parcel_info',{tracking_id:tid}).then(function(d){
+        if(d.success&&d.data&&d.data.parcel){
+            var p=d.data.parcel;
+            e.innerHTML='<b>'+tid+'</b> — Status: <b class="'+(p.status==='delivered'?'text-green-600':'text-orange-600')+'">'+p.status+'</b><br>'+
+                'Customer: '+p.customer_name+' | 📞 '+p.customer_phone+'<br>'+
+                'COD: ৳'+Number(p.cash_collection_amount||0).toLocaleString()+' | Charge: ৳'+Number(p.charge||0).toLocaleString()+' | Weight: '+(p.parcel_weight||0)+'g<br>'+
+                'Area: '+p.delivery_area+' | Invoice: '+(p.merchant_invoice_id||'—')+'<br>'+
+                '<a href="https://redx.com.bd/track-parcel/'+tid+'" target="_blank" class="text-blue-600 underline text-xs mt-1 inline-block">Open in RedX →</a>';
+        }else{e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+(d.error||'Not found')}
+    }).catch(function(x){e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+x.message})
+}
+
+function rxGenerateToken(){
+    var t='';for(var i=0;i<32;i++)t+='abcdefghijklmnopqrstuvwxyz0123456789'.charAt(Math.floor(Math.random()*36));
+    document.getElementById('rx_webhook_token').value=t;
+}
+
+// Load webhook logs
+rxPost('webhook_logs',{limit:10}).then(function(d){
+    var e=document.getElementById('rx-wh-logs');
+    if(d.logs&&d.logs.length){
+        e.innerHTML=d.logs.map(function(l){
+            var p='';try{var j=JSON.parse(l.payload);p=(j.status||'')+' '+(j.tracking_number||j.invoice_number||'')}catch(x){}
+            return '<div class="py-1 border-b border-gray-100"><span class="text-gray-400">'+(l.created_at||'').substring(5,16)+'</span> '+p+(l.result?' → <b>'+l.result.substring(0,50)+'</b>':'')+'</div>'
+        }).join('')
+    }else e.innerHTML='<p class="text-gray-400">No webhook logs yet</p>'
+}).catch(function(){document.getElementById('rx-wh-logs').innerHTML='<p class="text-gray-400">—</p>'});
 </script>
 
 
@@ -484,15 +820,17 @@ $baseUrl = SITE_URL . '/api/courier-webhook.php';
 $pathaoWhUrl = $baseUrl . '?courier=pathao';
 $sfWhUrl = $baseUrl . '?courier=steadfast';
 $cbWhUrl = $baseUrl . '?courier=carrybee';
+$rxWhUrlBase = SITE_URL . '/api/redx-webhook.php' . (!empty($rx['webhook_token']) ? '?token=' . urlencode($rx['webhook_token']) : '');
 $pathaoSecretSet = !empty($pc['webhook_secret']);
 // Fetch recent webhook logs
 $whLogs = [];
 try { $whLogs = $db->fetchAll("SELECT * FROM courier_webhook_log ORDER BY id DESC LIMIT 20"); } catch (\Throwable $e) {}
-$pathaoLogCount = 0; $sfLogCount = 0; $cbLogCount = 0;
+$pathaoLogCount = 0; $sfLogCount = 0; $cbLogCount = 0; $rxLogCount = 0;
 foreach ($whLogs as $wl) {
     if ($wl['courier'] === 'pathao') $pathaoLogCount++;
     elseif ($wl['courier'] === 'steadfast') $sfLogCount++;
     elseif ($wl['courier'] === 'carrybee') $cbLogCount++;
+    elseif ($wl['courier'] === 'redx') $rxLogCount++;
 }
 ?>
 <div class="max-w-4xl space-y-6">
@@ -572,21 +910,86 @@ foreach ($whLogs as $wl) {
         </div>
     </div>
 
-    <!-- ═══ STEADFAST & CARRYBEE WEBHOOKS ═══ -->
+    <!-- ═══ STEADFAST WEBHOOK (Full) ═══ -->
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div class="bg-blue-600 px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center"><span class="text-xl font-bold text-white">S</span></div>
+                <div>
+                    <h3 class="font-bold text-white text-lg">Steadfast Webhook</h3>
+                    <p class="text-blue-200 text-xs">Real-time order status updates from Steadfast courier</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 px-3 py-1.5 rounded-full <?= !empty($sf['webhook_token']) ? 'bg-green-500/20' : 'bg-yellow-500/20' ?>">
+                <span class="w-2 h-2 rounded-full <?= !empty($sf['webhook_token']) ? 'bg-green-300' : 'bg-yellow-300' ?>"></span>
+                <span class="text-xs font-medium text-white"><?= !empty($sf['webhook_token']) ? 'Token Set' : 'No Token' ?></span>
+            </div>
+        </div>
+        <div class="p-6 space-y-5">
+
+            <!-- Callback URL -->
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1.5">Callback URL <span class="text-blue-500 font-bold">(paste into Steadfast)</span></label>
+                <div class="flex gap-2">
+                    <code id="sf-wh-url2" class="flex-1 block text-sm font-mono text-gray-800 bg-gray-50 px-4 py-3 rounded-lg border break-all select-all"><?= e($sfWhUrl) ?></code>
+                    <button onclick="copyUrl('<?= e($sfWhUrl) ?>', this)" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap">📋 Copy</button>
+                </div>
+            </div>
+
+            <!-- Bearer Token -->
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1.5">Auth Token (Bearer)</label>
+                <div class="flex gap-2">
+                    <div class="relative flex-1">
+                        <input type="password" id="wh_sf_token" value="<?= e($sf['webhook_token']) ?>" class="w-full px-4 py-3 border rounded-lg text-sm font-mono bg-white pr-10" placeholder="Bearer token for webhook authentication">
+                        <button onclick="togglePass(this)" class="absolute right-3 top-3 text-gray-400 hover:text-gray-600">👁</button>
+                    </div>
+                    <button onclick="generateSfWhToken()" class="px-4 py-2 bg-gray-100 border rounded-lg text-sm hover:bg-gray-200 whitespace-nowrap" title="Generate a random token">🔑 Generate</button>
+                    <button onclick="saveSfWhToken()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap">💾 Save</button>
+                </div>
+                <p class="text-[10px] text-gray-500 mt-1">This token must match the "Auth Token (Bearer)" field in <a href="https://portal.packzy.com/user/webhook/add" target="_blank" class="text-blue-600 underline">Steadfast Webhook Settings</a>. Steadfast sends <code class="bg-gray-100 px-1 rounded">Authorization: Bearer YOUR_TOKEN</code> with each webhook request.</p>
+            </div>
+
+            <!-- Test Webhook -->
+            <div class="flex items-center gap-3">
+                <button onclick="testSfWebhook()" class="bg-blue-100 text-blue-700 px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-200 border border-blue-200">🔌 Test Webhook Endpoint</button>
+                <span id="sfWhTest" class="text-sm"></span>
+            </div>
+
+            <!-- Setup Steps -->
+            <div class="bg-gray-50 rounded-xl border p-4">
+                <h4 class="text-xs font-bold text-gray-700 mb-3 uppercase tracking-wider">Setup Steps</h4>
+                <div class="space-y-2 text-sm text-gray-600">
+                    <div class="flex items-start gap-2"><span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">1</span><span>Click <b>🔑 Generate</b> to create a secure token, then click <b>💾 Save</b></span></div>
+                    <div class="flex items-start gap-2"><span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">2</span><span>Go to <a href="https://portal.packzy.com/user/webhook/add" target="_blank" class="text-blue-600 underline font-medium">portal.packzy.com → Webhook Settings → Add Webhook</a></span></div>
+                    <div class="flex items-start gap-2"><span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">3</span><span>Paste the <b>Callback URL</b> from above</span></div>
+                    <div class="flex items-start gap-2"><span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">4</span><span>Paste the same <b>Auth Token (Bearer)</b> — it must match exactly</span></div>
+                    <div class="flex items-start gap-2"><span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">5</span><span>Select events: <b>Delivery Status Update</b> + <b>Tracking Update</b></span></div>
+                    <div class="flex items-start gap-2"><span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">6</span><span>Click <b>🔌 Test Webhook Endpoint</b> above to verify connection</span></div>
+                    <div class="flex items-start gap-2"><span class="bg-green-100 text-green-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">✓</span><span>Once connected, order statuses auto-update when Steadfast delivers/cancels/holds parcels.</span></div>
+                </div>
+            </div>
+
+            <!-- Recent hits -->
+            <p class="text-xs"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium"><?= $sfLogCount ?> recent webhook hits</span></p>
+        </div>
+    </div>
+
+    <!-- ═══ REDX & CARRYBEE WEBHOOKS ═══ -->
     <div class="grid md:grid-cols-2 gap-4">
         <div class="bg-white rounded-xl shadow-sm border p-5">
             <div class="flex items-center gap-2 mb-3">
-                <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center"><span class="text-sm font-bold text-blue-600">S</span></div>
-                <h3 class="font-bold text-gray-800">Steadfast Webhook</h3>
+                <div class="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center"><span class="text-sm font-bold text-red-500">R</span></div>
+                <h3 class="font-bold text-gray-800">RedX Webhook</h3>
             </div>
             <label class="block text-xs font-medium text-gray-600 mb-1">Callback URL</label>
             <div class="flex gap-2 mb-2">
-                <code class="flex-1 text-xs font-mono text-gray-700 bg-blue-50 px-3 py-2 rounded-lg border break-all"><?= e($sfWhUrl) ?></code>
-                <button onclick="copyUrl('<?= e($sfWhUrl) ?>', this)" class="text-xs bg-white px-2 py-1 rounded border hover:bg-gray-50">📋</button>
+                <code class="flex-1 text-xs font-mono text-gray-700 bg-red-50 px-3 py-2 rounded-lg border break-all"><?= e($rxWhUrlBase) ?></code>
+                <button onclick="copyUrl('<?= e($rxWhUrlBase) ?>', this)" class="text-xs bg-white px-2 py-1 rounded border hover:bg-gray-50">📋</button>
             </div>
-            <p class="text-[10px] text-gray-500 mb-2">Set in <a href="https://portal.steadfast.com.bd/user/webhook/add" target="_blank" class="text-blue-600 underline">Steadfast → Webhook Settings</a></p>
-            <p class="text-xs text-gray-400">Auth: Bearer token configured in Steadfast tab</p>
-            <p class="text-xs mt-2"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium"><?= $sfLogCount ?> recent hits</span></p>
+            <p class="text-[10px] text-gray-500 mb-2">Set in <a href="https://redx.com.bd/developer-api/" target="_blank" class="text-red-600 underline">RedX → Developer API → Webhook</a></p>
+            <p class="text-xs text-gray-400">Auth: Token in URL query param</p>
+            <p class="text-xs mt-2"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium"><?= $rxLogCount ?> recent hits</span></p>
         </div>
         <div class="bg-white rounded-xl shadow-sm border p-5">
             <div class="flex items-center gap-2 mb-3">
@@ -720,6 +1123,48 @@ function testPathaoWebhook(){
     }).catch(e=>{el.textContent='❌ '+e.message;el.className='text-sm text-red-600';});
 }
 
+function generateSfWhToken(){
+    var s='kb-sf-';for(var i=0;i<24;i++)s+='0123456789abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random()*36)];
+    var inp=document.getElementById('wh_sf_token');
+    inp.value=s;inp.type='text';
+}
+
+function saveSfWhToken(){
+    var token=document.getElementById('wh_sf_token').value.trim();
+    fetch('<?=SITE_URL?>/api/steadfast-actions.php',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:'save_settings',webhook_token:token})
+    }).then(r=>r.json()).then(d=>{
+        if(d.success!==false){
+            alert('✅ Webhook token saved!\n\nNow paste this same token into Steadfast → Webhook Settings → Auth Token (Bearer):\n\n'+token);
+            location.reload();
+        }else{alert('❌ '+(d.message||'Failed'));}
+    }).catch(e=>alert('Error: '+e.message));
+}
+
+function testSfWebhook(){
+    var el=document.getElementById('sfWhTest');
+    el.textContent='⏳ Testing...';el.className='text-sm text-blue-600';
+    var token=document.getElementById('wh_sf_token').value.trim();
+    var headers={'Content-Type':'application/json'};
+    if(token)headers['Authorization']='Bearer '+token;
+    fetch('<?= e($sfWhUrl) ?>',{
+        method:'POST',headers:headers,
+        body:JSON.stringify({status:'pending',invoice:'WEBHOOK-TEST-'+Date.now(),consignment_id:'TEST-000',notification_type:'test'})
+    }).then(r=>r.json().then(j=>({status:r.status,body:j}))).then(d=>{
+        var msgs=[];
+        msgs.push(d.status===200?'✅ HTTP 200 — Endpoint reachable':'❌ HTTP '+d.status);
+        if(d.status===401){
+            msgs.push('❌ Unauthorized — Token mismatch! Make sure the saved token matches what Steadfast sends.');
+        }else{
+            msgs.push('✅ Auth passed'+(token?' (Bearer token verified)':' (no token required)'));
+            msgs.push(d.body?.status==='success'?'✅ Webhook processed: '+d.body.message:'ℹ️ Response: '+JSON.stringify(d.body));
+        }
+        el.innerHTML=msgs.join('<br>');
+        el.className='text-sm '+(d.status===200?'text-green-600':'text-red-600');
+    }).catch(e=>{el.textContent='❌ Network error: '+e.message;el.className='text-sm text-red-600';});
+}
+
 function runSync(){
     var el=document.getElementById('syncResult');el.classList.remove('hidden');el.className='mt-3 p-3 rounded-lg text-sm bg-blue-50 text-blue-700';el.textContent='🔄 Syncing...';
     fetch('<?=SITE_URL?>/api/courier-sync.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:50})})
@@ -778,13 +1223,19 @@ function togglePass(btn){var i=btn.previousElementSibling||btn.closest('.relativ
                 <div class="bg-blue-50 rounded-lg p-3 border border-blue-200">
                     <p class="text-xs font-bold text-blue-700 mb-1.5">Steadfast</p>
                     <input type="email" id="fc_sf_email" value="<?=e($fc_sf_email)?>" placeholder="Steadfast login email" class="w-full px-2 py-1.5 border rounded text-xs mb-1">
-                    <input type="password" id="fc_sf_pass" value="<?=e($fc_sf_pass)?>" placeholder="Steadfast login password" class="w-full px-2 py-1.5 border rounded text-xs">
+                    <div class="relative">
+                        <input type="password" id="fc_sf_pass" value="<?=e($fc_sf_pass)?>" placeholder="Steadfast login password" class="w-full px-2 py-1.5 border rounded text-xs pr-8">
+                        <button type="button" onclick="sfTogglePw(this)" class="sf-pw-toggle absolute right-1.5 top-1 text-gray-400 hover:text-gray-600" title="Show"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    </div>
                     <p class="text-[10px] text-gray-400 mt-1">steadfast.com.bd login (for fraud check)</p>
                 </div>
                 <div class="bg-red-50 rounded-lg p-3 border border-red-200">
                     <p class="text-xs font-bold text-red-700 mb-1.5">RedX</p>
                     <input type="tel" id="fc_rx_phone" value="<?=e($fc_rx_phone)?>" placeholder="RedX login phone (01...)" class="w-full px-2 py-1.5 border rounded text-xs mb-1">
-                    <input type="password" id="fc_rx_pass" value="<?=e($fc_rx_pass)?>" placeholder="RedX login password" class="w-full px-2 py-1.5 border rounded text-xs">
+                    <div class="relative">
+                        <input type="password" id="fc_rx_pass" value="<?=e($fc_rx_pass)?>" placeholder="RedX login password" class="w-full px-2 py-1.5 border rounded text-xs pr-8">
+                        <button type="button" onclick="sfTogglePw(this)" class="sf-pw-toggle absolute right-1.5 top-1 text-gray-400 hover:text-gray-600" title="Show"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    </div>
                     <p class="text-[10px] text-gray-400 mt-1">redx.com.bd login (for fraud check)</p>
                 </div>
                 <button onclick="saveFraudConfig()" id="fcSaveBtn" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-indigo-700">💾 Save Fraud Check Credentials</button>

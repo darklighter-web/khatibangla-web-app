@@ -1,6 +1,6 @@
 <?php
 /**
- * Phone Check Widget v12 — Own DB counts + API cross-merchant data
+ * Phone Check Widget v13 — Minimal design matching courier cards style
  * Include: <?php include __DIR__ . '/../includes/phone-checker-widget.php'; ?>
  */
 $siteUrl = defined('SITE_URL') ? SITE_URL : '';
@@ -8,28 +8,24 @@ $siteUrl = defined('SITE_URL') ? SITE_URL : '';
 <style>
 #pcWidget{display:none;margin-bottom:16px;animation:pcSlide .3s ease}
 @keyframes pcSlide{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
-.pc-grid{display:flex;gap:8px;flex-wrap:wrap}
-.pc-card{flex:1;min-width:130px;max-width:220px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
-.pc-card-h{padding:8px 10px 4px;font-weight:700;font-size:12px;color:#374151;border-bottom:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between}
-.pc-badge{font-size:9px;padding:1px 6px;border-radius:8px;font-weight:700;color:#fff}
-.pc-badge.g{background:#22c55e}.pc-badge.y{background:#eab308}.pc-badge.r{background:#ef4444}.pc-badge.b{background:#3b82f6}.pc-badge.x{background:#9ca3af}
-.pc-card-b{padding:6px 10px 8px;flex:1;font-size:12px}
-.pc-num{font-size:22px;font-weight:800;line-height:1.2}
-.pc-num.g{color:#16a34a}.pc-num.y{color:#ca8a04}.pc-num.r{color:#dc2626}.pc-num.b{color:#2563eb}.pc-num.x{color:#9ca3af}
-.pc-label{color:#6b7280;font-size:10px}
-.pc-stat{color:#374151;font-size:11px;margin-top:2px}
-.pc-xm{color:#9ca3af;font-size:10px;font-style:italic;margin-top:3px}
-.pc-bar{height:4px;background:#e5e7eb;margin-top:auto}
-.pc-bar-f{height:100%;transition:width .5s ease}
+.pc-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+@media(max-width:900px){.pc-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:600px){.pc-grid{grid-template-columns:repeat(2,1fr)}}
+.pc-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px;display:flex;flex-direction:column;min-height:130px}
+.pc-card-h{font-weight:700;font-size:13px;color:#374151;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.pc-rate{font-size:14px;font-weight:700;margin-bottom:6px}
+.pc-rate.g{color:#16a34a}.pc-rate.y{color:#ca8a04}.pc-rate.r{color:#dc2626}.pc-rate.b{color:#3b82f6}.pc-rate.x{color:#9ca3af}
+.pc-line{font-size:12px;color:#6b7280;line-height:1.6}
+.pc-line b{color:#374151}
+.pc-bar{height:4px;background:#e5e7eb;border-radius:2px;margin-top:auto;padding-top:8px}
+.pc-bar-f{height:4px;border-radius:2px;transition:width .5s ease}
 .pc-bar-f.g{background:#22c55e}.pc-bar-f.y{background:#eab308}.pc-bar-f.r{background:#ef4444}.pc-bar-f.b{background:#3b82f6}
-.pc-fill{display:inline-block;margin-top:4px;padding:3px 14px;background:#22c55e;color:#fff;border:none;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;width:100%;text-align:center}
-.pc-fill:hover{background:#16a34a}
+.pc-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.pc-badge.g{background:#dcfce7;color:#166534}.pc-badge.y{background:#fef9c3;color:#854d0e}.pc-badge.r{background:#fee2e2;color:#991b1b}.pc-badge.b{background:#dbeafe;color:#1e40af}
+.pc-fill{display:block;margin-top:8px;padding:5px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;text-align:center}
+.pc-fill:hover{background:#d1d5db}
+.pc-note{font-size:10px;color:#9ca3af;font-style:italic;margin-top:4px}
 .pc-loading{text-align:center;padding:14px;color:#9ca3af;font-size:13px}
-.pc-summary{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;padding:8px 12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;align-items:center}
-.pc-summary-stat{text-align:center}
-.pc-summary-num{font-size:20px;font-weight:800}
-.pc-summary-label{font-size:10px;color:#6b7280}
-.pc-summary-rate{font-size:28px;font-weight:900;margin-right:8px}
 </style>
 
 <div id="pcWidget"><div id="pcContent"></div></div>
@@ -46,11 +42,6 @@ $siteUrl = defined('SITE_URL') ? SITE_URL : '';
     }
 
     function rc(rate) { return rate >= 70 ? 'g' : rate >= 40 ? 'y' : 'r'; }
-    function ratingBadge(cr) {
-        const m = {excellent_customer:['Excellent','g'],good_customer:['Good','g'],moderate_customer:['Moderate','y'],risky_customer:['Risky','r'],new_customer:['New','b']};
-        const [l,c] = m[cr] || [cr,'x'];
-        return `<span class="pc-badge ${c}">⭐ ${l}</span>`;
-    }
 
     function courierCard(title, data) {
         const t = parseInt(data.total||0);
@@ -59,28 +50,46 @@ $siteUrl = defined('SITE_URL') ? SITE_URL : '';
         const rate = t > 0 ? Math.round((s/t)*100) : 0;
         const c = t > 0 ? rc(rate) : 'b';
         const cr = data.customer_rating;
+        const isCross = (data.source||'').includes('cross-merchant');
+        const hasApi = !data.error && (cr || t > 0);
+        const isFraud = data.is_fraud || (parseInt(data.fraud_count||0) > 0);
 
-        // Cross-merchant note
-        let xm = '';
-        if (data.cross_merchant_total > 0) {
-            xm = `<div class="pc-xm">All merchants: ${data.cross_merchant_total} orders</div>`;
-        }
-        if (data.api_note) {
-            xm = `<div class="pc-xm">⚠ ${data.api_note.substring(0,40)}</div>`;
+        let badge = '';
+        if (isFraud) {
+            badge = `<span class="pc-badge r" style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;animation:pulse 2s infinite">⚠ FRAUD (${data.fraud_count||'!'})</span>`;
+        } else if (cr) {
+            const m = {excellent_customer:['Excellent','g'],good_customer:['Good','g'],moderate_customer:['Moderate','y'],risky_customer:['Risky','r'],new_customer:['New','b']};
+            const [l,cls] = m[cr] || [cr,'x'];
+            badge = `<span class="pc-badge ${cls}">${l}</span>`;
+        } else if (hasApi) {
+            badge = '<span style="font-size:10px;color:#9ca3af">✓API</span>';
         }
 
-        let badge = cr ? ratingBadge(cr) : '';
+        let note = '';
+        if (isFraud && data.fraud_reports && data.fraud_reports.length > 0) {
+            const rep = data.fraud_reports[0];
+            const reason = rep.reason || rep.note || rep.description || rep.message || 'Fraud reported';
+            note = `<div class="pc-note" style="color:#dc2626;font-weight:600">${reason.substring(0,60)}</div>`;
+        } else if (data.api_note) note = `<div class="pc-note">${data.api_note.substring(0,50)}</div>`;
+        else if (isCross) note = '<div class="pc-note">Cross-merchant data</div>';
+
+        let body = '';
+        if (t > 0) {
+            body = `<div class="pc-rate ${c}">Success Rate: ${rate}%</div>
+                <div class="pc-line">Total: <b>${t}</b></div>
+                <div class="pc-line">Success: <b>${s}</b></div>
+                <div class="pc-line">Cancelled: <b>${ca}</b></div>`;
+        } else if (cr) {
+            body = '<div class="pc-rate b">Rating only</div>';
+        } else if (data.error) {
+            body = `<div class="pc-rate x">Unavailable</div><div class="pc-note">${data.error.substring(0,50)}</div>`;
+        } else {
+            body = '<div class="pc-rate x">No data</div>';
+        }
 
         return `<div class="pc-card">
             <div class="pc-card-h">${title} ${badge}</div>
-            <div class="pc-card-b">
-                ${t > 0 ? `
-                    <div class="pc-stat">✅ Delivered: <b>${s}</b></div>
-                    <div class="pc-stat">❌ Cancelled: <b>${ca}</b></div>
-                    <div class="pc-stat">📦 Total: <b>${t}</b></div>
-                ` : `<div class="pc-num b" style="font-size:14px">${cr ? 'Rating only' : 'No data'}</div>`}
-                ${xm}
-            </div>
+            ${body}${note}
             <div class="pc-bar"><div class="pc-bar-f ${c}" style="width:${t>0?rate:0}%"></div></div>
         </div>`;
     }
@@ -97,70 +106,75 @@ $siteUrl = defined('SITE_URL') ? SITE_URL : '';
         const w = document.getElementById('pcWidget');
         const ct = document.getElementById('pcContent');
         w.style.display = 'block';
-        ct.innerHTML = '<div class="pc-loading">⏳ Checking ' + phone + '...</div>';
+        ct.innerHTML = '<div class="pc-loading">Checking ' + phone + '...</div>';
 
         fetch(FAPI + '?phone=' + encodeURIComponent(phone))
         .then(r => r.json())
         .then(j => {
-            if (!j.success) { ct.innerHTML = '<div style="color:#dc2626;padding:8px">❌ ' + (j.error||'Failed') + '</div>'; return; }
+            if (!j.success) { ct.innerHTML = '<div style="color:#dc2626;padding:8px">' + (j.error||'Failed') + '</div>'; return; }
 
             const co = j.combined || {};
             const l = j.local || {};
             const rate = parseInt(co.rate||0);
-            const riskColors = {low:'g',medium:'y',high:'r',new:'b',blocked:'r'};
-            const riskC = riskColors[co.risk] || 'b';
+            const c = rc(rate);
+            const oTotal = parseInt(co.total||0), oSuccess = parseInt(co.success||0), oCancel = parseInt(co.cancel||0);
 
-            // Summary bar
-            let summary = `<div class="pc-summary">
-                <div class="pc-summary-rate ${riskC}">${rate}%</div>
-                <div class="pc-summary-stat"><div class="pc-summary-num" style="color:#374151">${co.total||0}</div><div class="pc-summary-label">API Total</div></div>
-                <div class="pc-summary-stat"><div class="pc-summary-num" style="color:#16a34a">${co.success||0}</div><div class="pc-summary-label">Delivered ✅</div></div>
-                <div class="pc-summary-stat"><div class="pc-summary-num" style="color:#dc2626">${co.cancel||0}</div><div class="pc-summary-label">Cancelled ❌</div></div>
-                <div class="pc-summary-stat"><div class="pc-summary-num" style="color:#6366f1">৳${parseFloat(l.total_spent||0).toLocaleString()}</div><div class="pc-summary-label">Total Spent</div></div>
-                <div><span class="pc-badge ${riskC}" style="font-size:11px;padding:3px 10px">${co.risk_label||co.risk||'—'}</span></div>
+            // Check if any courier has fraud report
+            const anyFraud = (j.steadfast||{}).is_fraud || (j.pathao||{}).is_fraud || (j.redx||{}).is_fraud;
+            const fraudLabel = anyFraud ? '<span class="pc-badge r" style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5">⚠ FRAUD</span>' : '';
+
+            let overallCard = `<div class="pc-card"${anyFraud?' style="border:2px solid #fca5a5;background:#fef2f2"':''}>
+                <div class="pc-card-h">Overall <span class="pc-badge ${c}">${co.risk_label||co.risk||'New'}</span> ${fraudLabel}</div>
+                ${oTotal > 0 ? `
+                    <div class="pc-rate ${c}">Success Rate: ${rate}%</div>
+                    <div class="pc-line">Total: <b>${oTotal}</b></div>
+                    <div class="pc-line">Success: <b>${oSuccess}</b></div>
+                    <div class="pc-line">Cancelled: <b>${oCancel}</b></div>
+                ` : '<div class="pc-rate b">New Customer</div>'}
+                <div class="pc-bar"><div class="pc-bar-f ${c}" style="width:${rate}%"></div></div>
             </div>`;
 
-            // Per-courier cards
-            let localCard = `<div class="pc-card" style="border-color:#bbf7d0">
+            const lt = parseInt(l.total||0), ld = parseInt(l.delivered||0), lc = parseInt(l.cancelled||0);
+            const lw = parseInt(l.web_cancel||0);
+            const lRate = lt > 0 ? Math.round(ld/lt*100) : 0;
+            const lC = lt > 0 ? rc(lRate) : 'b';
+            let localCard = `<div class="pc-card">
                 <div class="pc-card-h">Our Record</div>
-                <div class="pc-card-b">
-                    ${parseInt(l.total||0) > 0 ? `
-                        <div class="pc-stat">✅ Delivered: <b>${l.delivered||0}</b></div>
-                        <div class="pc-stat">❌ Cancelled: <b>${l.cancelled||0}</b></div>
-                        <div class="pc-stat">🔄 Returned: <b>${l.returned||0}</b></div>
-                        <div class="pc-stat">📦 Total: <b>${l.total}</b></div>
-                    ` : '<div class="pc-num b" style="font-size:14px">New</div>'}
-                    <button class="pc-fill" onclick="pcFill(this)">Fill Address</button>
-                </div>
-                <div class="pc-bar"><div class="pc-bar-f ${parseInt(l.total||0)>0?rc(Math.round((parseInt(l.delivered||0)/parseInt(l.total))*100)):'b'}" style="width:${parseInt(l.total||0)>0?Math.round((parseInt(l.delivered||0)/parseInt(l.total))*100):0}%"></div></div>
+                ${lt > 0 ? `
+                    <div class="pc-rate ${lC}">Total: <b>${lt}</b></div>
+                    <div class="pc-line">Cancelled: <b>${lc}</b></div>
+                    <div class="pc-line">Web Order Cancel: <b>${lw}</b></div>
+                    <div class="pc-line">Total Spent: ৳${parseFloat(l.total_spent||0).toLocaleString()}</div>
+                ` : '<div class="pc-rate b">New Customer</div>'}
+                <button class="pc-fill" onclick="pcFill(this)">Fill</button>
+                <div class="pc-bar"><div class="pc-bar-f ${lC}" style="width:${lt>0?lRate:0}%"></div></div>
             </div>`;
 
-            ct.innerHTML = summary + `<div class="pc-grid">
+            ct.innerHTML = `<div class="pc-grid">
+                ${overallCard}
                 ${courierCard('Pathao', j.pathao||{})}
-                ${courierCard('Steadfast', j.steadfast||{})}
                 ${courierCard('RedX', j.redx||{})}
+                ${courierCard('Steadfast', j.steadfast||{})}
                 ${localCard}
             </div>`;
 
-            // Store local data for fill
             window._pcLocalData = l;
         })
-        .catch(e => { ct.innerHTML = '<div style="color:#dc2626;padding:8px">❌ ' + e.message + '</div>'; });
+        .catch(e => { ct.innerHTML = '<div style="color:#dc2626;padding:8px">' + e.message + '</div>'; });
     }
 
     window.pcFill = function(btn) {
         const d = window._pcLocalData;
-        if (!d || !d.areas || d.areas.length === 0) { btn.textContent = 'No data'; setTimeout(()=>btn.textContent='Fill Address',1500); return; }
-        // Try to fill address fields
+        if (!d || !d.areas || d.areas.length === 0) { btn.textContent = 'No data'; setTimeout(()=>btn.textContent='Fill',1500); return; }
         const fields = {customer_name:'name',customer_address:'address',customer_district:'district',customer_city:'city'};
         let filled = 0;
         for (const [name] of Object.entries(fields)) {
             const input = document.querySelector(`[name="${name}"]`);
             if (input && d[name]) { input.value = d[name]; input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new Event('change',{bubbles:true})); filled++; }
         }
-        btn.textContent = filled > 0 ? '✓ Filled' : 'No fields';
-        btn.style.background = '#16a34a';
-        setTimeout(()=>{btn.textContent='Fill Address';btn.style.background='#22c55e'},1500);
+        btn.textContent = filled > 0 ? 'Filled' : 'No fields';
+        btn.style.background = '#bbf7d0';
+        setTimeout(()=>{btn.textContent='Fill';btn.style.background='#e5e7eb'},1500);
     };
 
     function attach() {

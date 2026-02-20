@@ -85,14 +85,49 @@ if ($pathaoApi) {
         }
     } catch (\Throwable $e) { $fraudData['errors'][] = 'Pathao: ' . $e->getMessage(); }
 
-    // Steadfast portal fraud check
+    // Steadfast fraud check: try API endpoint first (faster, more reliable), then web scrape
     try {
-        $sFraud = $pathaoApi->fraudCheckSteadfast($phone);
-        if ($sFraud && !isset($sFraud['error'])) {
-            $fraudData['steadfast'] = $sFraud;
-        } else {
-            $fraudData['errors'][] = 'Steadfast: ' . ($sFraud['error'] ?? 'empty');
+        $sFraud = null;
+        // Strategy A: Direct API endpoint (uses API key, no login needed)
+        $sfApiKey = getSetting('steadfast_api_key','');
+        $sfSecret = getSetting('steadfast_secret_key','');
+        if ($sfApiKey && $sfSecret) {
+            $sfHeaders = ['Api-Key: '.trim($sfApiKey), 'Secret-Key: '.trim($sfSecret), 'Content-Type: application/json', 'Accept: application/json'];
+            $sfUrls = [
+                'https://portal.packzy.com/api/v1/fraud_check/'.urlencode($phone),
+                'https://portal.packzy.com/api/v1/courier_score/'.urlencode($phone),
+            ];
+            foreach ($sfUrls as $sfUrl) {
+                $ch = curl_init($sfUrl);
+                curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>8,CURLOPT_SSL_VERIFYPEER=>false,CURLOPT_HTTPHEADER=>$sfHeaders,CURLOPT_FOLLOWLOCATION=>true]);
+                $sfResp = curl_exec($ch); $sfCode = curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
+                if ($sfCode === 200 && $sfResp) {
+                    $sfData = json_decode($sfResp, true);
+                    if ($sfData) {
+                        $flat = array_merge($sfData, $sfData['data'] ?? []);
+                        $totalParcels = intval($flat['total_parcels'] ?? 0);
+                        $del = 0;
+                        foreach (['total_delivered','delivered','success_count','success'] as $dk) {
+                            if (isset($flat[$dk])) { $del = intval($flat[$dk]); break; }
+                        }
+                        $can = intval($flat['total_cancelled'] ?? $flat['cancelled'] ?? $flat['cancel'] ?? 0);
+                        $total = $totalParcels > 0 ? $totalParcels : ($del + $can);
+                        if ($total > 0 || $del > 0) {
+                            $sFraud = ['total_delivered'=>$del, 'total_cancelled'=>$can, 'total_parcels'=>$total, 'source'=>'api'];
+                            break;
+                        }
+                    }
+                }
+            }
         }
+        // Strategy B: Web scrape fallback
+        if (!$sFraud && $pathaoApi) {
+            $sfWeb = $pathaoApi->fraudCheckSteadfast($phone);
+            if ($sfWeb && !isset($sfWeb['error'])) $sFraud = $sfWeb;
+            else $fraudData['errors'][] = 'Steadfast: ' . ($sfWeb['error'] ?? 'empty');
+        }
+        if ($sFraud) $fraudData['steadfast'] = $sFraud;
+        elseif (!$sFraud && !$sfApiKey) $fraudData['errors'][] = 'Steadfast: API keys not configured';
     } catch (\Throwable $e) { $fraudData['errors'][] = 'Steadfast: ' . $e->getMessage(); }
 
     // RedX API fraud check
@@ -194,14 +229,16 @@ if ($fraudData['pathao']) {
 if ($fraudData['steadfast']) {
     $apiDelivered = intval($fraudData['steadfast']['total_delivered'] ?? 0);
     $apiCancelled = intval($fraudData['steadfast']['total_cancelled'] ?? 0);
-    $apiTotal     = $apiDelivered + $apiCancelled;
+    // Use total_parcels as authoritative total (includes in-transit), fallback to sum
+    $apiTotal     = intval($fraudData['steadfast']['total_parcels'] ?? 0);
+    if ($apiTotal < ($apiDelivered + $apiCancelled)) $apiTotal = $apiDelivered + $apiCancelled;
     $result['Steadfast']['fraud_api'] = $fraudData['steadfast'];
     if ($apiTotal > $result['Steadfast']['total']) {
         $result['Steadfast']['total']     = $apiTotal;
         $result['Steadfast']['success']   = $apiDelivered;
         $result['Steadfast']['cancelled'] = $apiCancelled;
         $result['Steadfast']['rate']      = $apiTotal > 0 ? round(($apiDelivered / $apiTotal) * 100) : 0;
-        $result['Steadfast']['data_source'] = 'steadfast_portal';
+        $result['Steadfast']['data_source'] = 'steadfast_api';
     }
     $result['Steadfast']['api_checked'] = max($result['Steadfast']['api_checked'], 1);
 }
@@ -247,10 +284,11 @@ foreach ($courierOrders['Other'] as $o) {
 $overallRate  = $allTotal > 0 ? round(($allSuccess / $allTotal) * 100) : 0;
 
 /* ─── Our Record ─── */
-$ourRecord = ['is_new' => true, 'total_orders' => $allTotal, 'web_orders' => 0, 'web_cancels' => 0, 'first_order' => null, 'total_spent' => 0];
+$ourRecord = ['is_new' => true, 'total_orders' => $allTotal, 'total' => 0, 'cancelled' => 0, 'web_orders' => 0, 'web_cancels' => 0, 'first_order' => null, 'total_spent' => 0];
 try {
     $ci = $db->fetch(
         "SELECT COUNT(*) as total,
+                SUM(CASE WHEN order_status='cancelled' THEN 1 ELSE 0 END) as cancelled,
                 SUM(CASE WHEN channel IN ('web','WEB','website') THEN 1 ELSE 0 END) as web_orders,
                 SUM(CASE WHEN channel IN ('web','WEB','website') AND order_status='cancelled' THEN 1 ELSE 0 END) as web_cancels,
                 MIN(created_at) as first_order,
@@ -259,6 +297,8 @@ try {
     );
     if ($ci) {
         $ourRecord['total_orders'] = intval($ci['total']);
+        $ourRecord['total']        = intval($ci['total']);
+        $ourRecord['cancelled']    = intval($ci['cancelled']);
         $ourRecord['web_orders']   = intval($ci['web_orders']);
         $ourRecord['web_cancels']  = intval($ci['web_cancels']);
         $ourRecord['first_order']  = $ci['first_order'];

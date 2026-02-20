@@ -163,7 +163,14 @@ if ($assignedTo) { $where .= " AND o.assigned_to = ?"; $params[] = intval($assig
 
 $total = $db->fetch("SELECT COUNT(*) as cnt FROM orders o WHERE {$where}", $params)['cnt'];
 $limit = ADMIN_ITEMS_PER_PAGE; $offset = ($page-1)*$limit; $totalPages = ceil($total/$limit);
-$orders = $db->fetchAll("SELECT o.*, au.full_name as assigned_name FROM orders o LEFT JOIN admin_users au ON au.id = o.assigned_to WHERE {$where} ORDER BY o.created_at DESC LIMIT {$limit} OFFSET {$offset}", $params);
+
+// Column sorting
+$sortCol = $_GET['sort'] ?? 'created_at';
+$sortDir = strtoupper($_GET['dir'] ?? 'DESC') === 'ASC' ? 'ASC' : 'DESC';
+$allowedSorts = ['created_at'=>'o.created_at','order_number'=>'o.order_number','total'=>'o.total','customer_name'=>'o.customer_name','channel'=>'o.channel','updated_at'=>'o.updated_at'];
+$orderBy = ($allowedSorts[$sortCol] ?? 'o.created_at') . ' ' . $sortDir;
+
+$orders = $db->fetchAll("SELECT o.*, au.full_name as assigned_name FROM orders o LEFT JOIN admin_users au ON au.id = o.assigned_to WHERE {$where} ORDER BY {$orderBy} LIMIT {$limit} OFFSET {$offset}", $params);
 
 // Pre-fetch customer success rates
 $successRates=[]; $previousOrders=[];
@@ -217,152 +224,177 @@ $tabConfig = [
 ];
 
 require_once __DIR__ . '/../includes/header.php';
+
+// Sort link helper
+function sortUrl($col) {
+    global $sortCol, $sortDir;
+    $p = $_GET;
+    $p['sort'] = $col;
+    $p['dir'] = ($sortCol === $col && $sortDir === 'ASC') ? 'desc' : 'asc';
+    return '?' . http_build_query($p);
+}
+function sortIcon($col) {
+    global $sortCol, $sortDir;
+    if ($sortCol !== $col) return '<span class="text-gray-300 ml-0.5">↕</span>';
+    return '<span class="text-blue-500 ml-0.5">' . ($sortDir === 'ASC' ? '↑' : '↓') . '</span>';
+}
 ?>
+<style>
+.om-table th,.om-table td{padding:6px 10px;white-space:nowrap;vertical-align:top;border-bottom:1px solid #f0f0f0;font-size:12px}
+.om-table th{background:#f8f9fb;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.3px;font-size:10px;position:sticky;top:0;z-index:2;border-bottom:2px solid #e2e8f0;user-select:none}
+.om-table th a{color:inherit;text-decoration:none}
+.om-table tr:hover{background:#f8fafc}
+.om-table .cust-name{font-weight:600;color:#1e293b;font-size:12px}
+.om-table .cust-phone{font-size:11px;color:#64748b;font-family:monospace}
+.om-table .cust-addr{font-size:10px;color:#94a3b8}
+.om-wrap{overflow-x:auto;border:1px solid #e2e8f0;border-radius:10px;background:#fff}
+.rate-badge{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:4px}
+.tag-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:12px;white-space:nowrap}
+.dot-menu{width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;color:#94a3b8;font-size:14px;line-height:1}
+.dot-menu:hover{background:#f1f5f9;color:#475569}
+.prod-thumb{width:28px;height:28px;border-radius:4px;object-fit:cover;border:1px solid #e5e7eb;flex-shrink:0}
+.status-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:3px}
+</style>
 
 <?php if (isset($_GET['msg'])): ?><div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">✓ <?= $_GET['msg'] === 'updated' ? 'Status updated.' : ($_GET['msg'] === 'bulk_updated' ? 'Bulk update completed.' : 'Action completed.') ?></div><?php endif; ?>
 
-<!-- Today's Summary -->
-<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-4">
-    <div class="bg-white rounded-xl border p-3 text-center">
-        <p class="text-2xl font-bold text-gray-800"><?= intval($todaySummary['total'] ?? 0) ?></p>
-        <p class="text-[10px] text-gray-400 uppercase tracking-wider">Today's Orders</p>
+<!-- Summary Cards -->
+<div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-3">
+    <div class="bg-white rounded-lg border p-2.5 text-center">
+        <p class="text-xl font-bold text-gray-800"><?= intval($todaySummary['total'] ?? 0) ?></p>
+        <p class="text-[9px] text-gray-400 uppercase tracking-wider">Today</p>
     </div>
-    <div class="bg-yellow-50 rounded-xl border border-yellow-200 p-3 text-center cursor-pointer hover:shadow" onclick="location='?status=processing'">
-        <p class="text-2xl font-bold text-yellow-600"><?= $statusCounts['processing'] ?></p>
-        <p class="text-[10px] text-yellow-600 uppercase tracking-wider">⚙ Processing</p>
+    <div class="bg-yellow-50 rounded-lg border border-yellow-200 p-2.5 text-center cursor-pointer hover:shadow-sm" onclick="location='?status=processing'">
+        <p class="text-xl font-bold text-yellow-600"><?= $statusCounts['processing'] ?></p>
+        <p class="text-[9px] text-yellow-600 uppercase tracking-wider">Processing</p>
     </div>
-    <div class="bg-blue-50 rounded-xl border border-blue-200 p-3 text-center cursor-pointer hover:shadow" onclick="location='?status=confirmed'">
-        <p class="text-2xl font-bold text-blue-600"><?= $statusCounts['confirmed'] ?></p>
-        <p class="text-[10px] text-blue-600 uppercase tracking-wider">✅ Confirmed</p>
+    <div class="bg-blue-50 rounded-lg border border-blue-200 p-2.5 text-center cursor-pointer hover:shadow-sm" onclick="location='?status=confirmed'">
+        <p class="text-xl font-bold text-blue-600"><?= $statusCounts['confirmed'] ?></p>
+        <p class="text-[9px] text-blue-600 uppercase tracking-wider">Confirmed</p>
     </div>
-    <div class="bg-purple-50 rounded-xl border border-purple-200 p-3 text-center cursor-pointer hover:shadow" onclick="location='?status=shipped'">
-        <p class="text-2xl font-bold text-purple-600"><?= $statusCounts['shipped'] ?></p>
-        <p class="text-[10px] text-purple-600 uppercase tracking-wider">🚚 Shipped</p>
+    <?php if (($statusCounts['ready_to_ship'] ?? 0) > 0): ?>
+    <div class="bg-violet-50 rounded-lg border border-violet-200 p-2.5 text-center cursor-pointer hover:shadow-sm" onclick="location='?status=ready_to_ship'">
+        <p class="text-xl font-bold text-violet-600"><?= $statusCounts['ready_to_ship'] ?? 0 ?></p>
+        <p class="text-[9px] text-violet-600 uppercase tracking-wider">RTS</p>
     </div>
-    <div class="bg-green-50 rounded-xl border border-green-200 p-3 text-center cursor-pointer hover:shadow" onclick="location='?status=delivered'">
-        <p class="text-2xl font-bold text-green-600"><?= $statusCounts['delivered'] ?></p>
-        <p class="text-[10px] text-green-600 uppercase tracking-wider">📦 Delivered</p>
+    <?php endif; ?>
+    <div class="bg-purple-50 rounded-lg border border-purple-200 p-2.5 text-center cursor-pointer hover:shadow-sm" onclick="location='?status=shipped'">
+        <p class="text-xl font-bold text-purple-600"><?= $statusCounts['shipped'] ?></p>
+        <p class="text-[9px] text-purple-600 uppercase tracking-wider">Shipped</p>
     </div>
-    <div class="bg-white rounded-xl border p-3 text-center">
-        <p class="text-2xl font-bold text-gray-800">৳<?= number_format($todaySummary['revenue'] ?? 0) ?></p>
-        <p class="text-[10px] text-gray-400 uppercase tracking-wider">Today Revenue</p>
+    <div class="bg-green-50 rounded-lg border border-green-200 p-2.5 text-center cursor-pointer hover:shadow-sm" onclick="location='?status=delivered'">
+        <p class="text-xl font-bold text-green-600"><?= $statusCounts['delivered'] ?></p>
+        <p class="text-[9px] text-green-600 uppercase tracking-wider">Delivered</p>
+    </div>
+    <div class="bg-white rounded-lg border p-2.5 text-center">
+        <p class="text-xl font-bold text-gray-800">৳<?= number_format($todaySummary['revenue'] ?? 0) ?></p>
+        <p class="text-[9px] text-gray-400 uppercase tracking-wider">Revenue</p>
     </div>
 </div>
 
-<!-- All Status Tabs - Single Horizontal Bar -->
-<div class="bg-white rounded-xl border mb-4 overflow-hidden">
+<!-- Status Tabs -->
+<div class="bg-white rounded-lg border mb-3 overflow-hidden">
     <div class="overflow-x-auto">
         <div class="flex items-center min-w-max border-b">
+            <a href="<?= adminUrl('pages/order-management.php') ?>" class="px-4 py-2.5 text-xs font-medium border-b-2 transition <?= !$status ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700' ?>">
+                ALL <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] <?= !$status ? 'bg-blue-100 text-blue-700 font-bold' : 'bg-gray-100 text-gray-500' ?>"><?= number_format($totalOrders) ?></span>
+            </a>
             <?php 
-            // All statuses in the order shown in reference
-            $allTabStatuses = ['processing', 'confirmed', 'shipped', 'delivered', 'pending_return', 'returned', 'partial_delivered', 'cancelled', 'pending_cancel', 'on_hold', 'no_response', 'good_but_no_response', 'advance_payment', 'lost'];
+            $allTabStatuses = ['processing', 'confirmed', 'ready_to_ship', 'shipped', 'delivered', 'pending_return', 'returned', 'partial_delivered', 'cancelled', 'pending_cancel', 'on_hold', 'no_response', 'good_but_no_response', 'advance_payment', 'lost'];
             foreach ($allTabStatuses as $s):
                 $tc = $tabConfig[$s] ?? ['icon'=>'','color'=>'gray','label'=>ucwords(str_replace('_',' ',$s))];
                 $cnt = $statusCounts[$s] ?? 0;
+                if ($cnt === 0 && !in_array($s, ['processing','confirmed','ready_to_ship','shipped','delivered','cancelled','returned'])) continue;
                 $isActive = $status === $s;
             ?>
-            <a href="?status=<?= $s ?>" class="flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition <?= $isActive ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300' ?>">
-                <?= $tc['label'] ?> <span class="px-1.5 py-0.5 rounded text-xs <?= $isActive ? 'bg-blue-100 text-blue-700 font-bold' : 'bg-gray-100 text-gray-500' ?>"><?= number_format($cnt) ?></span>
+            <a href="?status=<?= $s ?>" class="px-3 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition <?= $isActive ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700' ?>">
+                <?= $tc['label'] ?> <span class="px-1.5 py-0.5 rounded text-[10px] <?= $isActive ? 'bg-blue-100 text-blue-700 font-bold' : 'bg-gray-100 text-gray-500' ?>"><?= number_format($cnt) ?></span>
             </a>
             <?php endforeach; ?>
         </div>
     </div>
-    <!-- Quick filter row -->
-    <div class="flex items-center gap-2 px-4 py-2 bg-gray-50/50">
-        <a href="<?= adminUrl('pages/order-management.php') ?>" class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium <?= !$status ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border hover:bg-gray-100' ?>">
-            All <span class="ml-1 px-1.5 rounded text-[10px] <?= !$status?'bg-gray-600 text-white':'bg-gray-200' ?>"><?= number_format($totalOrders) ?></span>
-        </a>
-        <?php if ($incompleteCount > 0): ?>
-        <a href="<?= adminUrl('pages/incomplete-orders.php') ?>" class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">
-            🛒 Incomplete <span class="bg-red-100 px-1.5 rounded text-[10px]"><?= $incompleteCount ?></span>
-        </a>
-        <?php endif; ?>
-    </div>
 </div>
 
-<!-- Search & Actions Bar -->
-<div class="bg-white rounded-xl shadow-sm border p-3 mb-4">
-    <form method="GET" class="flex flex-wrap items-center gap-2">
+<!-- Search & Toolbar -->
+<div class="bg-white rounded-lg border p-2.5 mb-3 flex flex-wrap items-center gap-2">
+    <form method="GET" class="flex flex-wrap items-center gap-2 flex-1">
         <?php if ($status): ?><input type="hidden" name="status" value="<?= e($status) ?>"><?php endif; ?>
-        <div class="relative flex-1 min-w-[200px]">
-            <svg class="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-            <input type="text" name="search" value="<?= e($search) ?>" placeholder="Search by order #, name, phone..." class="w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+        <div class="relative flex-1 min-w-[180px]">
+            <svg class="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <input type="text" name="search" value="<?= e($search) ?>" placeholder="Search order, name, phone..." class="w-full pl-8 pr-3 py-1.5 border rounded text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
         </div>
-        <a href="<?= adminUrl('pages/order-add.php') ?>" class="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-700">⊕ New</a>
-        <button type="button" onclick="document.getElementById('advFilters').classList.toggle('hidden')" class="border text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">🔍 Filters</button>
-        <div class="relative" id="actionsWrap">
-            <button type="button" onclick="fcCheck('')" class="bg-blue-50 text-blue-600 border border-blue-200 px-3 py-2 rounded-lg text-sm hover:bg-blue-100 font-medium">🔍 Check Customer</button>
-            <button type="button" onclick="document.getElementById('actionsMenu').classList.toggle('hidden')" class="border text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">⋮ Actions</button>
-            <div id="actionsMenu" class="hidden absolute right-0 top-full mt-1 w-64 bg-white rounded-xl shadow-2xl border z-50 py-1">
-                <div class="px-3 py-1.5 flex items-center justify-between"><span id="selC" class="text-xs text-gray-500">0 selected</span><button type="button" onclick="document.getElementById('selectAll').checked=true;toggleAll(document.getElementById('selectAll'))" class="text-xs text-blue-600">✓ Select All</button></div><hr class="my-1">
-                <p class="px-3 py-1 text-xs font-semibold text-gray-400">📄 PRINT</p>
-                <button type="button" onclick="bPrint('standard')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50">📄 Invoice</button>
-                <button type="button" onclick="bPrint('sticker')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50">🏷 Sticker</button>
-                <button type="button" onclick="bPrint('picking')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50">📦 Picking</button>
-                <button type="button" onclick="bPrint('compact')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50">📋 Sheet</button>
-                <hr class="my-1"><p class="px-3 py-1 text-xs font-semibold text-gray-400">✎ STATUS</p>
-                <button type="button" onclick="bStatus('confirmed')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50">✅ Confirm</button>
-                <button type="button" onclick="bStatus('shipped')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50">🚚 Ship</button>
-                <button type="button" onclick="bStatus('delivered')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50">📦 Deliver</button>
-                <button type="button" onclick="bStatus('returned')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 text-orange-600">↩ Confirm Return</button>
-                <button type="button" onclick="bStatus('cancelled')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 text-red-600">✗ Cancel</button>
-                <hr class="my-1"><p class="px-3 py-1 text-xs font-semibold text-gray-400">🚛 COURIER</p>
-                <button type="button" onclick="bCourier('Pathao')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50"><span class="inline-block w-4 h-4 bg-red-500 text-white rounded text-xs text-center mr-1 font-bold leading-4">P</span> Pathao</button>
-                <button type="button" onclick="bCourier('Steadfast')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50"><span class="inline-block w-4 h-4 bg-blue-500 text-white rounded text-xs text-center mr-1 font-bold leading-4">S</span> Steadfast</button>
-                <button type="button" onclick="bCourier('CarryBee')" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50"><span class="inline-block w-4 h-4 bg-green-500 text-white rounded text-xs text-center mr-1 font-bold leading-4">C</span> CarryBee</button>
-                <hr class="my-1">
-                <button type="button" onclick="syncCourier()" class="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 text-indigo-600">🔄 Sync Courier Status</button>
-                <hr class="my-1">
-                <a href="<?= SITE_URL ?>/api/export.php?type=orders<?= $status?'&status='.$status:'' ?>" class="block px-4 py-1.5 text-sm hover:bg-gray-50">📊 Export Excel</a>
-            </div>
-        </div>
+        <button type="button" onclick="document.getElementById('advFilters').classList.toggle('hidden')" class="border text-gray-500 px-2.5 py-1.5 rounded text-xs hover:bg-gray-50">Filters</button>
     </form>
-    <div id="advFilters" class="<?= ($dateFrom||$dateTo||$channel||$assignedTo)?'':'hidden' ?> mt-3 pt-3 border-t">
-        <form method="GET" class="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <?php if ($status): ?><input type="hidden" name="status" value="<?= e($status) ?>"><?php endif; ?>
-            <input type="date" name="date_from" value="<?= e($dateFrom) ?>" placeholder="From" class="px-3 py-2 border rounded-lg text-sm">
-            <input type="date" name="date_to" value="<?= e($dateTo) ?>" placeholder="To" class="px-3 py-2 border rounded-lg text-sm">
-            <select name="channel" class="px-3 py-2 border rounded-lg text-sm"><option value="">All Channels</option><?php foreach(['website','facebook','phone','whatsapp'] as $ch): ?><option value="<?= $ch ?>" <?= $channel===$ch?'selected':'' ?>><?= ucfirst($ch) ?></option><?php endforeach; ?></select>
-            <select name="assigned" class="px-3 py-2 border rounded-lg text-sm"><option value="">All Staff</option><?php foreach($adminUsers as $au): ?><option value="<?= $au['id'] ?>" <?= $assignedTo==$au['id']?'selected':'' ?>><?= e($au['full_name']) ?></option><?php endforeach; ?></select>
-            <div class="flex gap-2"><button class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">Apply</button><a href="<?= adminUrl('pages/order-management.php') ?>" class="bg-gray-100 text-gray-600 px-3 py-2 rounded-lg text-sm">✕</a></div>
-        </form>
+    <a href="<?= adminUrl('pages/order-add.php') ?>" class="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-blue-700">+ New Order</a>
+    <button type="button" onclick="fcCheck('')" class="border border-blue-200 text-blue-600 px-2.5 py-1.5 rounded text-xs hover:bg-blue-50 font-medium">🔍 Check</button>
+    <div class="relative" id="actionsWrap">
+        <button type="button" onclick="document.getElementById('actionsMenu').classList.toggle('hidden')" class="border text-gray-500 px-2.5 py-1.5 rounded text-xs hover:bg-gray-50">⋮ Actions</button>
+        <div id="actionsMenu" class="hidden absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-xl border z-50 py-1 max-h-[70vh] overflow-y-auto">
+            <div class="px-3 py-1.5 flex items-center justify-between"><span id="selC" class="text-[10px] text-gray-400">0 selected</span><button type="button" onclick="document.getElementById('selectAll').checked=true;toggleAll(document.getElementById('selectAll'))" class="text-[10px] text-blue-600">Select All</button></div><hr class="my-0.5">
+            <p class="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase">Print</p>
+            <button type="button" onclick="bPrint('standard')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">📄 Invoice</button>
+            <button type="button" onclick="bPrint('sticker')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">🏷 Sticker</button>
+            <button type="button" onclick="bPrint('picking')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">📦 Picking List</button>
+            <button type="button" onclick="bPrint('compact')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">📋 Sheet</button>
+            <hr class="my-0.5"><p class="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase">Status</p>
+            <button type="button" onclick="bStatus('confirmed')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">✅ Confirm</button>
+            <button type="button" onclick="bStatus('ready_to_ship')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">📦 Ready to Ship</button>
+            <button type="button" onclick="bStatus('shipped')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">🚚 Ship</button>
+            <button type="button" onclick="bStatus('delivered')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">📦 Deliver</button>
+            <button type="button" onclick="bStatus('returned')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 text-orange-600">↩ Return</button>
+            <button type="button" onclick="bStatus('cancelled')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 text-red-600">✗ Cancel</button>
+            <hr class="my-0.5"><p class="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase">Courier</p>
+            <button type="button" onclick="bCourier('Pathao')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50"><span class="inline-block w-3.5 h-3.5 bg-red-500 text-white rounded text-[9px] text-center mr-1 font-bold leading-[14px]">P</span>Pathao</button>
+            <button type="button" onclick="bCourier('Steadfast')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50"><span class="inline-block w-3.5 h-3.5 bg-blue-500 text-white rounded text-[9px] text-center mr-1 font-bold leading-[14px]">S</span>Steadfast</button>
+            <button type="button" onclick="bCourier('RedX')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50"><span class="inline-block w-3.5 h-3.5 bg-orange-500 text-white rounded text-[9px] text-center mr-1 font-bold leading-[14px]">R</span>RedX</button>
+            <hr class="my-0.5">
+            <button type="button" onclick="syncCourier()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 text-indigo-600">🔄 Sync Courier</button>
+            <a href="<?= SITE_URL ?>/api/export.php?type=orders<?= $status?'&status='.$status:'' ?>" class="block px-3 py-1.5 text-xs hover:bg-gray-50">📊 Export Excel</a>
+        </div>
     </div>
 </div>
 
-<!-- Courier Progress -->
-<div id="cProg" class="hidden mb-4 bg-white rounded-xl border p-4">
-    <div class="flex items-center justify-between mb-2"><span class="text-sm font-medium" id="cProgL">Uploading...</span><span id="cProgC" class="text-xs text-gray-500"></span></div>
-    <div class="w-full bg-gray-200 rounded-full h-2"><div id="cProgB" class="bg-blue-600 h-2 rounded-full transition-all" style="width:0%"></div></div>
-    <div id="cErr" class="mt-2 text-xs text-red-600 hidden"></div>
+<!-- Advanced Filters (hidden) -->
+<div id="advFilters" class="<?= ($dateFrom||$dateTo||$channel||$assignedTo)?'':'hidden' ?> bg-white rounded-lg border p-3 mb-3">
+    <form method="GET" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        <?php if ($status): ?><input type="hidden" name="status" value="<?= e($status) ?>"><?php endif; ?>
+        <input type="date" name="date_from" value="<?= e($dateFrom) ?>" class="px-2.5 py-1.5 border rounded text-xs">
+        <input type="date" name="date_to" value="<?= e($dateTo) ?>" class="px-2.5 py-1.5 border rounded text-xs">
+        <select name="channel" class="px-2.5 py-1.5 border rounded text-xs"><option value="">All Channels</option><?php foreach(['website','facebook','phone','whatsapp'] as $ch): ?><option value="<?= $ch ?>" <?= $channel===$ch?'selected':'' ?>><?= ucfirst($ch) ?></option><?php endforeach; ?></select>
+        <select name="assigned" class="px-2.5 py-1.5 border rounded text-xs"><option value="">All Staff</option><?php foreach($adminUsers as $au): ?><option value="<?= $au['id'] ?>" <?= $assignedTo==$au['id']?'selected':'' ?>><?= e($au['full_name']) ?></option><?php endforeach; ?></select>
+        <div class="flex gap-2"><button class="flex-1 bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-medium">Apply</button><a href="<?= adminUrl('pages/order-management.php') ?>" class="bg-gray-100 text-gray-500 px-3 py-1.5 rounded text-xs">✕</a></div>
+    </form>
+</div>
+
+<!-- Courier Upload Progress -->
+<div id="cProg" class="hidden mb-3 bg-white rounded-lg border p-3">
+    <div class="flex items-center justify-between mb-1.5"><span class="text-xs font-medium" id="cProgL">Uploading...</span><span id="cProgC" class="text-[10px] text-gray-400"></span></div>
+    <div class="w-full bg-gray-200 rounded-full h-1.5"><div id="cProgB" class="bg-blue-600 h-1.5 rounded-full transition-all" style="width:0%"></div></div>
+    <div id="cErr" class="mt-1.5 text-[10px] text-red-600 hidden"></div>
 </div>
 
 <!-- Orders Table -->
 <form method="POST" id="bulkForm"><input type="hidden" name="action" value="bulk_status">
-<div class="bg-white rounded-xl shadow-sm border overflow-hidden">
-    <div class="p-4 border-b flex items-center justify-between">
-        <p class="text-sm text-gray-500"><strong class="text-gray-800"><?= number_format($total) ?></strong> orders <?= $status ? '('.($tabConfig[$status]['label'] ?? ucfirst($status)).')' : '' ?></p>
-        <div class="flex items-center gap-2 text-xs text-gray-400">
-            <span>Flow:</span>
-            <span class="text-yellow-600 font-medium">Processing</span><span>→</span>
-            <span class="text-blue-600 font-medium">Confirmed</span><span>→</span>
-            <span class="text-purple-600 font-medium">Shipped</span><span>→</span>
-            <span class="text-green-600 font-medium">Delivered</span>
-        </div>
-    </div>
-    <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-            <thead class="bg-gray-50"><tr>
-                <th class="px-3 py-3 w-8"><input type="checkbox" id="selectAll" onchange="toggleAll(this)" class="rounded"></th>
-                <th class="px-3 py-3 text-left text-gray-600 text-xs font-medium">Date</th>
-                <th class="px-3 py-3 text-left text-gray-600 text-xs font-medium">Invoice</th>
-                <th class="px-3 py-3 text-left text-gray-600 text-xs font-medium">Customer</th>
-                <th class="px-3 py-3 text-left text-gray-600 text-xs font-medium">Items</th>
-                <th class="px-3 py-3 text-left text-gray-600 text-xs font-medium">Total</th>
-                <th class="px-3 py-3 text-left text-gray-600 text-xs font-medium">Status</th>
-                <th class="px-3 py-3 text-left text-gray-600 text-xs font-medium">Courier</th>
-                <th class="px-3 py-3 text-center text-gray-600 text-xs font-medium">Action</th>
-            </tr></thead>
-            <tbody class="divide-y">
+<div class="om-wrap">
+    <table class="om-table w-full">
+        <thead>
+            <tr>
+                <th style="width:30px"><input type="checkbox" id="selectAll" onchange="toggleAll(this)"></th>
+                <th><a href="<?= sortUrl('created_at') ?>">Date <?= sortIcon('created_at') ?></a></th>
+                <th><a href="<?= sortUrl('order_number') ?>">Invoice <?= sortIcon('order_number') ?></a></th>
+                <th>Customer</th>
+                <th>Note</th>
+                <th>Products</th>
+                <th>Tags</th>
+                <th><a href="<?= sortUrl('total') ?>">Total <?= sortIcon('total') ?></a></th>
+                <th>Upload</th>
+                <th>User</th>
+                <th><a href="<?= sortUrl('channel') ?>">Source <?= sortIcon('channel') ?></a></th>
+                <th>Shipping Note</th>
+                <th style="width:40px">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
 <?php foreach ($orders as $order):
     $sr=$successRates[$order['customer_phone']]??['total'=>0,'delivered'=>0,'rate'=>0,'cancelled'=>0,'total_spent'=>0];
     $prevO=$previousOrders[$order['customer_phone']]??[];
@@ -372,135 +404,214 @@ require_once __DIR__ . '/../includes/header.php';
     $oStatus = $order['order_status'] === 'pending' ? 'processing' : $order['order_status'];
     $nxt = $nextAction[$oStatus] ?? null;
     $creditUsed = floatval($order['store_credit_used'] ?? 0);
+    
+    // Status color mapping
+    $statusColors = [
+        'processing'=>'bg-yellow-100 text-yellow-700','confirmed'=>'bg-blue-100 text-blue-700',
+        'ready_to_ship'=>'bg-violet-100 text-violet-700','shipped'=>'bg-purple-100 text-purple-700',
+        'delivered'=>'bg-green-100 text-green-700','cancelled'=>'bg-red-100 text-red-700',
+        'returned'=>'bg-orange-100 text-orange-700','pending_return'=>'bg-amber-100 text-amber-700',
+        'pending_cancel'=>'bg-pink-100 text-pink-700','partial_delivered'=>'bg-cyan-100 text-cyan-700',
+        'on_hold'=>'bg-gray-100 text-gray-700','no_response'=>'bg-rose-100 text-rose-700',
+        'good_but_no_response'=>'bg-teal-100 text-teal-700','advance_payment'=>'bg-emerald-100 text-emerald-700',
+    ];
+    $statusDots = [
+        'processing'=>'#eab308','confirmed'=>'#3b82f6','ready_to_ship'=>'#8b5cf6',
+        'shipped'=>'#9333ea','delivered'=>'#22c55e','cancelled'=>'#ef4444',
+        'returned'=>'#f97316','pending_return'=>'#f59e0b','on_hold'=>'#6b7280',
+    ];
+    $sDot = $statusDots[$oStatus] ?? '#94a3b8';
+    $sBadge = $statusColors[$oStatus] ?? 'bg-gray-100 text-gray-600';
+    
+    // Courier tracking
+    $__cn = strtolower($order['courier_name'] ?? ($order['shipping_method'] ?? ''));
+    $__cid = $order['courier_consignment_id'] ?? ($order['pathao_consignment_id'] ?? '');
+    $__tid = $order['courier_tracking_id'] ?? $__cid;
+    $__link = '';
+    if ($__cid) {
+        if (strpos($__cn, 'steadfast') !== false) $__link = 'https://steadfast.com.bd/user/consignment/' . urlencode($__cid);
+        elseif (strpos($__cn, 'pathao') !== false) $__link = 'https://merchant.pathao.com/courier/orders/' . urlencode($__cid);
+        elseif (strpos($__cn, 'redx') !== false) $__link = 'https://redx.com.bd/track-parcel/?trackingId=' . urlencode($__tid);
+    }
+    
+    // Source/channel display
+    $channelMap = ['website'=>'WEB','facebook'=>'FACEBOOK','phone'=>'PHONE','whatsapp'=>'WHATSAPP','instagram'=>'INSTAGRAM'];
+    $srcLabel = $channelMap[$order['channel'] ?? ''] ?? strtoupper($order['channel'] ?? '—');
 ?>
-<tr class="hover:bg-gray-50">
-    <td class="px-3 py-2.5"><input type="checkbox" name="order_ids[]" value="<?= $order['id'] ?>" class="order-check rounded" onchange="updateBulk()"></td>
-    <td class="px-3 py-2.5 whitespace-nowrap">
-        <p class="text-xs font-medium text-gray-700"><?= date('d/m/y', strtotime($order['created_at'])) ?></p>
-        <p class="text-[10px] text-gray-400"><?= date('h:i A', strtotime($order['created_at'])) ?></p>
-        <p class="text-[10px] text-gray-400"><?= timeAgo($order['updated_at']?:$order['created_at']) ?></p>
+<tr>
+    <!-- Checkbox -->
+    <td><input type="checkbox" name="order_ids[]" value="<?= $order['id'] ?>" class="order-check" onchange="updateBulk()"></td>
+    
+    <!-- Date -->
+    <td>
+        <div style="font-size:11px;font-weight:500;color:#334155"><?= date('d/m/Y,', strtotime($order['created_at'])) ?></div>
+        <div style="font-size:10px;color:#64748b"><?= date('h:i a', strtotime($order['created_at'])) ?></div>
+        <div style="font-size:9px;color:#94a3b8">Updated <?= timeAgo($order['updated_at']?:$order['created_at']) ?></div>
     </td>
-    <td class="px-3 py-2.5">
-        <a href="<?= adminUrl('pages/order-view.php?id='.$order['id']) ?>" class="font-mono text-sm font-semibold text-gray-800 hover:text-blue-600"><?= e($order['order_number']) ?></a>
-        <?php if (!empty($order['notes'])): ?><p class="text-[10px] text-orange-600 font-medium mt-0.5 max-w-[120px] truncate" title="<?= e($order['notes']) ?>">📝 <?= e(mb_strimwidth($order['notes'],0,30,'...')) ?></p><?php endif; ?>
-    </td>
-    <td class="px-3 py-2.5">
-        <div class="min-w-[180px]">
-            <p class="text-sm text-gray-800 font-medium"><?= e($order['customer_name']) ?></p>
-            <div class="flex items-center gap-1.5 mt-0.5">
-                <span class="text-xs text-gray-500"><?= e($order['customer_phone']) ?></span>
-                <span class="font-bold text-[10px] <?= $rC ?>"><?= $sr['rate'] ?>%</span>
-                <span class="text-blue-500 cursor-pointer hover:text-blue-700" onclick="fcCheck('<?= $ph ?>')" title="Check courier history"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></span>
-                <a href="tel:<?= $ph ?>" class="text-green-500 hover:text-green-700"><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg></a>
-                <a href="https://wa.me/88<?= $ph ?>" target="_blank" class="text-green-600"><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg></a>
-            </div>
-            <p class="text-[10px] text-gray-400 truncate max-w-[180px]">📍 <?= e(mb_strimwidth($order['customer_address'],0,35,'...')) ?></p>
-            <?php if (count($prevO) > 1): ?>
-            <div class="mt-0.5"><span class="text-[10px] text-blue-600 cursor-pointer hover:underline" onclick="this.nextElementSibling.classList.toggle('hidden')">📦 <?= $sr['total'] ?> orders · ৳<?= number_format($sr['total_spent']) ?></span>
-                <div class="hidden absolute z-30 bg-white border rounded-lg shadow-xl p-2 w-52 max-h-36 overflow-y-auto">
-                    <?php foreach($prevO as $po): if($po['id']==$order['id']) continue; ?>
-                    <a href="<?= adminUrl('pages/order-view.php?id='.$po['id']) ?>" class="flex items-center justify-between px-2 py-1 hover:bg-gray-50 rounded text-xs">
-                        <span class="font-mono">#<?= e($po['order_number']) ?></span>
-                        <span class="<?= getOrderStatusBadge($po['order_status']) ?> px-1 py-0.5 rounded"><?= getOrderStatusLabel($po['order_status']) ?></span>
-                        <span>৳<?= number_format($po['total']) ?></span>
-                    </a><?php endforeach; ?>
-                </div>
-            </div>
-            <?php endif; ?>
+    
+    <!-- Invoice -->
+    <td>
+        <div style="display:flex;align-items:center;gap:4px">
+            <a href="<?= adminUrl('pages/order-view.php?id='.$order['id']) ?>" style="font-weight:700;color:#0f172a;font-size:12px;text-decoration:none" onmouseover="this.style.color='#2563eb'" onmouseout="this.style.color='#0f172a'"><?= e($order['order_number']) ?></a>
+            <span class="dot-menu" onclick="toggleRowMenu(this,<?= $order['id'] ?>)">⋮</span>
         </div>
     </td>
-    <td class="px-3 py-2.5">
-        <div class="flex items-center gap-1">
-            <?php foreach(array_slice($oItems,0,2) as $item): ?>
-            <div class="w-9 h-9 rounded-lg border bg-gray-50 overflow-hidden flex-shrink-0" title="<?= e($item['product_name']) ?>"><img src="<?= !empty($item['featured_image'])?imgSrc('products',$item['featured_image']):'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22><text y=%22.9em%22 font-size=%2230%22>📦</text></svg>' ?>" class="w-full h-full object-cover" loading="lazy"></div>
-            <?php endforeach; ?>
-            <?php if(count($oItems)>2): ?><span class="text-xs text-gray-400">+<?= count($oItems)-2 ?></span><?php endif; ?>
+    
+    <!-- Customer -->
+    <td style="min-width:160px">
+        <div style="display:flex;align-items:center;gap:5px">
+            <span style="color:#94a3b8;font-size:13px">👤</span>
+            <span class="cust-name"><?= e($order['customer_name']) ?></span>
         </div>
-        <?php foreach($oItems as $it): if(!empty($it['variant_name'])): ?><p class="text-[10px] text-indigo-600 mt-0.5"><?= e($it['variant_name']) ?></p><?php break; endif; endforeach; ?>
+        <div style="margin-top:1px;display:flex;align-items:center;gap:3px">
+            <span class="cust-phone"><?= e($order['customer_phone']) ?></span>
+            <span class="rate-badge" style="background:<?= $sr['rate']>=70?'#dcfce7':($sr['rate']>=40?'#fef9c3':'#fee2e2') ?>;color:<?= $sr['rate']>=70?'#166534':($sr['rate']>=40?'#854d0e':'#991b1b') ?>"><?= $sr['rate'] ?>%</span>
+        </div>
+        <div class="cust-addr">📍 <?= e(mb_strimwidth($order['customer_address'],0,40,'...')) ?></div>
     </td>
-    <td class="px-3 py-2.5">
-        <p class="font-bold text-gray-800">৳<?= number_format($order['total']) ?></p>
-        <?php if ($creditUsed > 0): ?><p class="text-[10px] text-yellow-600"><i class="fas fa-coins"></i> -৳<?= number_format($creditUsed) ?></p><?php endif; ?>
-        <p class="text-[10px] text-gray-400">+৳<?= number_format($order['shipping_cost']??0) ?> ship</p>
-    </td>
-    <td class="px-3 py-2.5">
-        <span class="text-xs px-2 py-1 rounded-full font-medium <?= getOrderStatusBadge($oStatus) ?>"><?= getOrderStatusLabel($oStatus) ?></span>
-        <?php if(!empty($tags)): ?><div class="flex flex-wrap gap-0.5 mt-1"><?php foreach(array_slice($tags,0,2) as $tag): ?><span class="text-[10px] bg-gray-100 text-gray-600 px-1 py-0.5 rounded"><?= e($tag['tag_name']) ?></span><?php endforeach; ?></div><?php endif; ?>
-        <button onclick="addTag(<?= $order['id'] ?>)" class="text-[10px] text-blue-400 hover:text-blue-600 mt-0.5">+tag</button>
-    </td>
-    <td class="px-3 py-2.5">
-        <?php if(!empty($order['courier_consignment_id']) || !empty($order['pathao_consignment_id'])):
-            $__cn = strtolower($order['courier_name'] ?: ($order['shipping_method'] ?? ''));
-            $__cid = $order['courier_consignment_id'] ?: ($order['pathao_consignment_id'] ?? '');
-            $__tid = $order['courier_tracking_id'] ?: $__cid;
-            if (strpos($__cn, 'steadfast') !== false) {
-                $__link = 'https://portal.steadfast.com.bd/find-consignment?consignment_id=' . urlencode($__cid);
-                $__badge = 'text-green-600'; $__icon = '📦';
-            } elseif (strpos($__cn, 'pathao') !== false) {
-                $__link = 'https://merchant.pathao.com/courier/consignments/' . urlencode($__cid);
-                $__badge = 'text-red-600'; $__icon = '🚀';
-            } else { $__link = '#'; $__badge = 'text-blue-600'; $__icon = '📦'; }
-        ?>
-            <a href="<?= $__link ?>" target="_blank" class="text-xs font-mono <?= $__badge ?> hover:underline font-medium" title="Open in <?= e($order['courier_name'] ?: $order['shipping_method'] ?? '') ?>">
-                <?= $__icon ?> <?= e($__tid) ?>
-            </a>
-            <p class="text-[10px] text-gray-400 mt-0.5"><?= e($order['courier_name'] ?: ($order['shipping_method'] ?? '')) ?></p>
-        <?php elseif(!empty($order['courier_name']) || !empty($order['shipping_method'])): ?>
-            <span class="text-xs text-blue-600"><?= e($order['courier_name'] ?: ($order['shipping_method'] ?? '')) ?></span>
+    
+    <!-- Note -->
+    <td style="max-width:180px;white-space:normal">
+        <?php if(!empty($order['notes'])): ?>
+        <div style="font-size:11px;color:#475569;line-height:1.4"><?= e(mb_strimwidth($order['notes'],0,120,'...')) ?></div>
         <?php else: ?>
-            <span class="text-[10px] text-gray-400">—</span>
-        <?php endif; ?>
-        <?php if(!empty($order['courier_status'])):
-            $__cs = $order['courier_status'];
-            $__csc = 'text-gray-400';
-            if (in_array($__cs, ['delivered','delivered_approval_pending'])) $__csc = 'text-green-600 font-medium';
-            elseif (in_array($__cs, ['cancelled','cancelled_approval_pending'])) $__csc = 'text-red-500';
-            elseif ($__cs === 'hold') $__csc = 'text-yellow-600';
-            elseif ($__cs === 'in_review') $__csc = 'text-purple-500';
-        ?>
-            <p class="text-[10px] <?= $__csc ?> mt-0.5" title="Courier API status">📡 <?= e($__cs) ?></p>
+        <span style="color:#d1d5db">—</span>
         <?php endif; ?>
     </td>
-    <td class="px-3 py-2.5 text-center">
-        <div class="flex items-center gap-1 justify-center">
-            <?php if ($nxt): ?>
-            <form method="POST" class="inline" onsubmit="return confirm('<?= $nxt['label'] ?> this order?')">
-                <input type="hidden" name="action" value="update_status">
-                <input type="hidden" name="order_id" value="<?= $order['id'] ?>">
-                <input type="hidden" name="status" value="<?= $nxt['status'] ?>">
-                <button class="px-2 py-1 rounded text-xs font-medium bg-<?= $nxt['color'] ?>-100 text-<?= $nxt['color'] ?>-700 hover:bg-<?= $nxt['color'] ?>-200 transition" title="<?= $nxt['label'] ?>">
-                    <?= $nxt['icon'] ?> <?= $nxt['label'] ?>
-                </button>
-            </form>
-            <?php endif; ?>
-            <a href="<?= adminUrl('pages/order-view.php?id='.$order['id']) ?>" class="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">Open</a>
+    
+    <!-- Products -->
+    <td style="min-width:160px">
+        <div style="display:inline-flex;align-items:center;gap:3px;margin-bottom:3px">
+            <span class="status-dot" style="background:<?= $sDot ?>"></span>
+            <span class="tag-badge" style="background:<?= $sDot ?>22;color:<?= $sDot ?>;font-size:9px;padding:1px 6px"><?= strtoupper(str_replace('_',' ',$oStatus)) ?></span>
         </div>
+        <?php foreach(array_slice($oItems,0,2) as $item): ?>
+        <div style="display:flex;align-items:center;gap:5px;margin-top:2px">
+            <img src="<?= !empty($item['featured_image'])?imgSrc('products',$item['featured_image']):'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22><rect fill=%22%23f1f5f9%22 width=%2240%22 height=%2240%22/><text y=%22.75em%22 x=%22.15em%22 font-size=%2224%22>📦</text></svg>' ?>" class="prod-thumb" loading="lazy">
+            <div>
+                <div style="font-size:11px;color:#334155;font-weight:500;max-width:120px;overflow:hidden;text-overflow:ellipsis"><?= e($item['product_name']) ?></div>
+                <div style="font-size:9px;color:#94a3b8"><?php if(!empty($item['variant_name'])): ?><?= e($item['variant_name']) ?> · <?php endif; ?>Qty: <?= intval($item['quantity']) ?></div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+        <?php if(count($oItems)>2): ?><div style="font-size:9px;color:#94a3b8;margin-top:2px">+<?= count($oItems)-2 ?> more</div><?php endif; ?>
+    </td>
+    
+    <!-- Tags -->
+    <td>
+        <?php
+        // Show order tags as colored badges
+        $tagColors = ['REPEAT'=>'bg-orange-100 text-orange-700','URGENT'=>'bg-red-100 text-red-700','VIP'=>'bg-purple-100 text-purple-700','GIFT'=>'bg-pink-100 text-pink-700','COD VERIFIED'=>'bg-green-100 text-green-700','ADVANCE PAID'=>'bg-emerald-100 text-emerald-700','FOLLOW UP'=>'bg-blue-100 text-blue-700'];
+        if ($sr['total'] > 1): ?>
+            <span class="tag-badge" style="background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;margin-bottom:2px">Repeat Customer</span><br>
+        <?php endif;
+        foreach(array_slice($tags,0,3) as $tag):
+            $tc2 = $tagColors[$tag['tag_name']] ?? 'bg-gray-100 text-gray-600';
+        ?>
+            <span class="tag-badge <?= $tc2 ?>" style="margin-bottom:2px"><?= e($tag['tag_name']) ?></span><br>
+        <?php endforeach; ?>
+        <button onclick="addTag(<?= $order['id'] ?>)" style="font-size:9px;color:#93c5fd;border:none;background:none;cursor:pointer;padding:0">+tag</button>
+    </td>
+    
+    <!-- Total -->
+    <td style="text-align:right">
+        <div style="font-weight:700;color:#0f172a;font-size:12px"><?= number_format($order['total'],2) ?></div>
+        <?php if ($creditUsed > 0): ?><div style="font-size:9px;color:#ca8a04">-৳<?= number_format($creditUsed) ?></div><?php endif; ?>
+    </td>
+    
+    <!-- Upload (Courier Tracking) -->
+    <td>
+        <?php if($__link && $__cid): ?>
+            <a href="<?= $__link ?>" target="_blank" style="font-size:11px;color:#2563eb;text-decoration:none;font-family:monospace;font-weight:500" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'"><?= e($__tid) ?></a>
+            <?php if(!empty($order['courier_status'])):
+                $__cs = $order['courier_status'];
+                $__csc = '#94a3b8';
+                if (in_array($__cs, ['delivered','delivered_approval_pending'])) $__csc = '#22c55e';
+                elseif (in_array($__cs, ['cancelled','cancelled_approval_pending'])) $__csc = '#ef4444';
+                elseif ($__cs === 'hold') $__csc = '#eab308';
+            ?>
+                <div style="font-size:9px;color:<?= $__csc ?>;margin-top:1px"><?= e($__cs) ?></div>
+            <?php endif; ?>
+        <?php elseif($__cid): ?>
+            <span style="font-size:11px;color:#64748b;font-family:monospace"><?= e($__cid) ?></span>
+        <?php else: ?>
+            <span style="color:#d1d5db">—</span>
+        <?php endif; ?>
+    </td>
+    
+    <!-- User -->
+    <td>
+        <span style="font-size:11px;color:#475569"><?= e($order['assigned_name'] ?? '—') ?></span>
+    </td>
+    
+    <!-- Source -->
+    <td>
+        <span style="font-size:10px;font-weight:600;color:#64748b"><?= $srcLabel ?></span>
+    </td>
+    
+    <!-- Shipping Note -->
+    <td style="max-width:160px;white-space:normal">
+        <?php
+        $shipNote = '';
+        if (!empty($order['courier_name'])) $shipNote .= $order['courier_name'];
+        if (!empty($order['shipping_notes'])) $shipNote = $order['shipping_notes'];
+        // Use notes if contains shipping keywords
+        if (!$shipNote && !empty($order['notes'])) {
+            $n = $order['notes'];
+            if (preg_match('/(exchange|delivery|urgent|fragile|call before)/i', $n)) $shipNote = $n;
+        }
+        if ($shipNote): ?>
+            <div style="font-size:10px;color:#475569;line-height:1.3"><?= e(mb_strimwidth($shipNote,0,80,'...')) ?></div>
+        <?php else: ?>
+            <span style="color:#d1d5db">—</span>
+        <?php endif; ?>
+    </td>
+    
+    <!-- Actions -->
+    <td style="text-align:center">
+        <span class="dot-menu" onclick="toggleRowMenu(this,<?= $order['id'] ?>)">⋮</span>
     </td>
 </tr>
 <?php endforeach; ?>
-<?php if(empty($orders)): ?><tr><td colspan="9" class="px-4 py-12 text-center text-gray-400"><div class="text-4xl mb-2">📦</div><p>No orders found</p></td></tr><?php endif; ?>
-            </tbody>
-        </table>
+<?php if(empty($orders)): ?>
+<tr><td colspan="13" style="text-align:center;padding:40px 20px;color:#94a3b8"><div style="font-size:28px;margin-bottom:8px">📦</div>No orders found</td></tr>
+<?php endif; ?>
+        </tbody>
+    </table>
+</div>
+
+<!-- Pagination -->
+<?php if ($totalPages > 1): ?>
+<div class="flex items-center justify-between mt-3 px-1">
+    <p class="text-xs text-gray-500">Page <strong><?= $page ?></strong> of <?= $totalPages ?> · <?= number_format($total) ?> orders</p>
+    <div class="flex gap-1">
+        <?php if($page>1): ?><a href="?<?= http_build_query(array_merge($_GET,['page'=>$page-1])) ?>" class="px-2.5 py-1 text-xs rounded bg-white border hover:bg-gray-50">←</a><?php endif; ?>
+        <?php for($i=max(1,$page-2);$i<=min($totalPages,$page+2);$i++): ?><a href="?<?= http_build_query(array_merge($_GET,['page'=>$i])) ?>" class="px-2.5 py-1 text-xs rounded <?= $i===$page?'bg-blue-600 text-white border-blue-600':'bg-white border hover:bg-gray-50' ?>"><?= $i ?></a><?php endfor; ?>
+        <?php if($page<$totalPages): ?><a href="?<?= http_build_query(array_merge($_GET,['page'=>$page+1])) ?>" class="px-2.5 py-1 text-xs rounded bg-white border hover:bg-gray-50">→</a><?php endif; ?>
     </div>
-    <?php if ($totalPages > 1): ?>
-    <div class="flex items-center justify-between px-4 py-3 border-t">
-        <p class="text-sm text-gray-500">Page <?= $page ?>/<?= $totalPages ?></p>
-        <div class="flex gap-1">
-            <?php if($page>1): ?><a href="?<?= http_build_query(array_merge($_GET,['page'=>$page-1])) ?>" class="px-3 py-1.5 text-sm rounded bg-gray-100 hover:bg-gray-200">←</a><?php endif; ?>
-            <?php for($i=max(1,$page-2);$i<=min($totalPages,$page+2);$i++): ?><a href="?<?= http_build_query(array_merge($_GET,['page'=>$i])) ?>" class="px-3 py-1.5 text-sm rounded <?= $i===$page?'bg-blue-600 text-white':'bg-gray-100 hover:bg-gray-200' ?>"><?= $i ?></a><?php endfor; ?>
-            <?php if($page<$totalPages): ?><a href="?<?= http_build_query(array_merge($_GET,['page'=>$page+1])) ?>" class="px-3 py-1.5 text-sm rounded bg-gray-100 hover:bg-gray-200">→</a><?php endif; ?>
-        </div>
-    </div>
-    <?php endif; ?>
-</div></form>
+</div>
+<?php endif; ?>
+</form>
+
+<!-- Row Action Menu (reusable popup) -->
+<div id="rowMenu" class="hidden fixed z-50 w-44 bg-white rounded-lg shadow-xl border py-1" style="font-size:12px">
+    <a id="rmOpen" href="#" class="block px-3 py-1.5 hover:bg-gray-50">📋 Open Order</a>
+    <a id="rmPrint" href="#" target="_blank" class="block px-3 py-1.5 hover:bg-gray-50">🖨 Print Invoice</a>
+    <hr class="my-0.5">
+    <button id="rmConfirm" class="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-blue-600" type="button">✅ Confirm</button>
+    <button id="rmShip" class="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-purple-600" type="button">🚚 Ship</button>
+    <button id="rmDeliver" class="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-green-600" type="button">📦 Deliver</button>
+    <hr class="my-0.5">
+    <button id="rmCancel" class="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-red-600" type="button">✗ Cancel</button>
+</div>
 
 <!-- Tag Modal -->
 <div id="tagModal" class="fixed inset-0 z-50 hidden bg-black/40 flex items-center justify-center">
-    <div class="bg-white rounded-xl p-5 w-80 shadow-2xl">
-        <h3 class="font-bold text-gray-800 mb-3">Add Tag</h3><input type="hidden" id="tagOId">
-        <div class="flex flex-wrap gap-2 mb-3"><?php foreach(['REPEAT','URGENT','VIP','GIFT','FOLLOW UP','COD VERIFIED','ADVANCE PAID'] as $p): ?><button onclick="subTag('<?= $p ?>')" class="text-xs bg-gray-100 hover:bg-blue-100 px-2 py-1 rounded"><?= $p ?></button><?php endforeach; ?></div>
-        <div class="flex gap-2"><input type="text" id="tagIn" placeholder="Custom..." class="flex-1 px-3 py-2 border rounded-lg text-sm" onkeydown="if(event.key==='Enter')subTag(this.value)"><button onclick="subTag(document.getElementById('tagIn').value)" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">Add</button></div>
-        <button onclick="document.getElementById('tagModal').classList.add('hidden')" class="mt-2 text-xs text-gray-400 w-full text-center">Cancel</button>
+    <div class="bg-white rounded-lg p-4 w-72 shadow-2xl">
+        <h3 class="font-bold text-gray-800 text-sm mb-2">Add Tag</h3><input type="hidden" id="tagOId">
+        <div class="flex flex-wrap gap-1.5 mb-2"><?php foreach(['REPEAT','URGENT','VIP','GIFT','FOLLOW UP','COD VERIFIED','ADVANCE PAID'] as $p): ?><button onclick="subTag('<?= $p ?>')" class="text-[10px] bg-gray-100 hover:bg-blue-100 px-2 py-1 rounded"><?= $p ?></button><?php endforeach; ?></div>
+        <div class="flex gap-1.5"><input type="text" id="tagIn" placeholder="Custom..." class="flex-1 px-2.5 py-1.5 border rounded text-xs" onkeydown="if(event.key==='Enter')subTag(this.value)"><button onclick="subTag(document.getElementById('tagIn').value)" class="bg-blue-600 text-white px-3 py-1.5 rounded text-xs">Add</button></div>
+        <button onclick="document.getElementById('tagModal').classList.add('hidden')" class="mt-1.5 text-[10px] text-gray-400 w-full text-center">Cancel</button>
     </div>
 </div>
 
@@ -512,8 +623,8 @@ function getIds(){return Array.from(document.querySelectorAll('.order-check:chec
 
 function bPrint(t){const ids=getIds();if(!ids.length){alert('Select orders');return}window.open('<?= adminUrl('pages/order-print.php') ?>?ids='+ids.join(',')+'&template='+t,'_blank');document.getElementById('actionsMenu').classList.add('hidden')}
 function bStatus(s){const ids=getIds();if(!ids.length){alert('Select orders');return}if(!confirm('Change '+ids.length+' orders to "'+s+'"?'))return;const f=document.getElementById('bulkForm');let h=f.querySelector('[name=bulk_status]');if(!h){h=document.createElement('input');h.type='hidden';h.name='bulk_status';f.appendChild(h)}h.value=s;f.submit()}
-
 function bCourier(c){const ids=getIds();if(!ids.length){alert('Select orders');return}if(!confirm('Upload '+ids.length+' to '+c+'?'))return;document.getElementById('actionsMenu').classList.add('hidden');doCourier(ids,c)}
+
 function doCourier(ids,c){
     const p=document.getElementById('cProg');p.classList.remove('hidden');
     document.getElementById('cProgL').textContent='Uploading '+ids.length+' to '+c+'...';
@@ -531,7 +642,31 @@ function doCourier(ids,c){
 function addTag(id){document.getElementById('tagOId').value=id;document.getElementById('tagIn').value='';document.getElementById('tagModal').classList.remove('hidden');document.getElementById('tagIn').focus()}
 function subTag(t){t=t.trim();if(!t)return;const id=document.getElementById('tagOId').value;fetch(location.pathname,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=add_tag&order_id='+id+'&tag='+encodeURIComponent(t)}).then(()=>{document.getElementById('tagModal').classList.add('hidden');location.reload()})}
 
-document.addEventListener('click',e=>{const w=document.getElementById('actionsWrap');if(w&&!w.contains(e.target))document.getElementById('actionsMenu').classList.add('hidden')});
+// Row context menu
+function toggleRowMenu(el, orderId) {
+    const rm = document.getElementById('rowMenu');
+    if (rm._open === orderId) { rm.classList.add('hidden'); rm._open = null; return; }
+    const r = el.getBoundingClientRect();
+    rm.style.top = (r.bottom + window.scrollY + 2) + 'px';
+    rm.style.left = Math.min(r.left, window.innerWidth - 190) + 'px';
+    rm.classList.remove('hidden');
+    rm._open = orderId;
+    document.getElementById('rmOpen').href = '<?= adminUrl('pages/order-view.php?id=') ?>' + orderId;
+    document.getElementById('rmPrint').href = '<?= adminUrl('pages/order-print.php?ids=') ?>' + orderId + '&template=standard';
+    ['Confirm','Ship','Deliver','Cancel'].forEach(a => {
+        const btn = document.getElementById('rm'+a);
+        btn.onclick = () => { if(confirm(a+' this order?')){
+            const fd=new FormData();fd.append('action','update_status');fd.append('order_id',orderId);fd.append('status',{Confirm:'confirmed',Ship:'shipped',Deliver:'delivered',Cancel:'cancelled'}[a]);
+            fetch(location.pathname,{method:'POST',body:fd}).then(()=>location.reload());
+        }};
+    });
+}
+document.addEventListener('click', e => {
+    const rm = document.getElementById('rowMenu');
+    if (rm && !rm.contains(e.target) && !e.target.classList.contains('dot-menu')) { rm.classList.add('hidden'); rm._open = null; }
+    const w = document.getElementById('actionsWrap');
+    if (w && !w.contains(e.target)) document.getElementById('actionsMenu').classList.add('hidden');
+});
 
 function syncCourier(){
     document.getElementById('actionsMenu').classList.add('hidden');
@@ -546,28 +681,26 @@ function syncCourier(){
         setTimeout(()=>location.reload(),2500);
     }).catch(e=>{document.getElementById('cProgL').textContent='Sync error: '+e.message});
 }
+
 /* ─── Fraud Check Popup ─── */
 function fcCheck(phone) {
     if (!phone) { phone = prompt('Enter phone number (01XXXXXXXXX):'); if (!phone) return; }
     phone = phone.replace(/\D/g, '');
     if (phone.length < 10) { alert('Invalid phone number'); return; }
-
-    // Create/show modal
     let m = document.getElementById('fcModal');
     if (!m) {
-        m = document.createElement('div');
-        m.id = 'fcModal';
+        m = document.createElement('div'); m.id = 'fcModal';
         m.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9998;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.parentElement.style.display='none'">
-            <div style="background:#fff;border-radius:16px;max-width:700px;width:95%;max-height:85vh;overflow-y:auto;box-shadow:0 25px 50px rgba(0,0,0,.25)">
-                <div style="padding:16px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
-                    <div style="display:flex;align-items:center;gap:8px"><span style="font-size:20px">🔍</span><b style="font-size:15px">Customer Fraud Check</b></div>
-                    <div style="display:flex;gap:8px;align-items:center">
-                        <input id="fcPhone" type="tel" placeholder="01XXXXXXXXX" style="border:2px solid #e5e7eb;border-radius:8px;padding:6px 12px;width:150px;font-family:monospace;font-size:14px">
-                        <button onclick="fcRun()" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:6px 16px;font-size:13px;cursor:pointer;font-weight:600">Check</button>
-                        <button onclick="this.closest('#fcModal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:#999">✕</button>
+            <div style="background:#fff;border-radius:12px;max-width:700px;width:95%;max-height:85vh;overflow-y:auto;box-shadow:0 25px 50px rgba(0,0,0,.25)">
+                <div style="padding:12px 16px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
+                    <div style="display:flex;align-items:center;gap:6px"><span style="font-size:16px">🔍</span><b style="font-size:13px">Customer Fraud Check</b></div>
+                    <div style="display:flex;gap:6px;align-items:center">
+                        <input id="fcPhone" type="tel" placeholder="01XXXXXXXXX" style="border:2px solid #e5e7eb;border-radius:6px;padding:4px 10px;width:140px;font-family:monospace;font-size:12px">
+                        <button onclick="fcRun()" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;font-weight:600">Check</button>
+                        <button onclick="this.closest('#fcModal').style.display='none'" style="background:none;border:none;font-size:18px;cursor:pointer;color:#999">✕</button>
                     </div>
                 </div>
-                <div id="fcBody" style="padding:16px 20px"></div>
+                <div id="fcBody" style="padding:12px 16px"></div>
             </div></div>`;
         document.body.appendChild(m);
     }
@@ -575,56 +708,41 @@ function fcCheck(phone) {
     document.getElementById('fcPhone').value = phone;
     fcRun();
 }
-
 function fcRun() {
     const phone = document.getElementById('fcPhone').value.trim().replace(/\D/g, '');
     if (!phone || phone.length < 10) return;
     const body = document.getElementById('fcBody');
-    body.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af"><div style="font-size:24px;margin-bottom:8px">⏳</div>Checking Pathao + Steadfast + RedX + Local DB...</div>';
-
+    body.innerHTML = '<div style="text-align:center;padding:30px;color:#9ca3af"><div style="font-size:20px;margin-bottom:6px">⏳</div>Checking...</div>';
     fetch('<?= SITE_URL ?>/api/fraud-checker.php?phone=' + encodeURIComponent(phone))
-    .then(r => r.json())
-    .then(j => {
-        if (!j.success) { body.innerHTML = '<div style="padding:20px;color:#dc2626">❌ ' + (j.error||'Error') + '</div>'; return; }
-
+    .then(r => r.json()).then(j => {
+        if (!j.success) { body.innerHTML = '<div style="padding:16px;color:#dc2626">❌ ' + (j.error||'Error') + '</div>'; return; }
         const p=j.pathao||{}, s=j.steadfast||{}, r=j.redx||{}, l=j.local||{}, co=j.combined||{};
         const risk=co.risk||'new';
         const riskBg={low:'#dcfce7',medium:'#fef9c3',high:'#fee2e2',new:'#dbeafe',blocked:'#fee2e2'}[risk]||'#f3f4f6';
         const riskTxt={low:'#166534',medium:'#854d0e',high:'#991b1b',new:'#1e40af',blocked:'#991b1b'}[risk]||'#374151';
-
         function apiCard(name, data, color) {
-            if (data.error) return `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px;flex:1;min-width:140px"><div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px">${name}</div><div style="font-size:11px;color:#ef4444">❌ ${data.error.substring(0,60)}</div></div>`;
+            if (data.error) return `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px;flex:1;min-width:120px"><div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:2px">${name}</div><div style="font-size:10px;color:#ef4444">❌ ${data.error.substring(0,50)}</div></div>`;
             if (data.show_count===false && data.customer_rating) {
                 const labels={excellent_customer:'⭐ Excellent',good_customer:'✅ Good',moderate_customer:'⚠️ Moderate',risky_customer:'🚫 Risky'};
-                return `<div style="background:${color}11;border:1px solid ${color}33;border-radius:10px;padding:10px;flex:1;min-width:140px"><div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px">${name} ✓</div><div style="font-size:14px;font-weight:700;color:${color}">${labels[data.customer_rating]||data.customer_rating}</div><div style="font-size:10px;color:#9ca3af">Rating only (v2)</div></div>`;
+                return `<div style="background:${color}11;border:1px solid ${color}33;border-radius:8px;padding:8px;flex:1;min-width:120px"><div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:2px">${name}</div><div style="font-size:13px;font-weight:700;color:${color}">${labels[data.customer_rating]||data.customer_rating}</div></div>`;
             }
-            const total=data.total||0, success=data.success||0;
-            const rate=total>0?Math.round(success/total*100):0;
-            return `<div style="background:${color}11;border:1px solid ${color}33;border-radius:10px;padding:10px;flex:1;min-width:140px"><div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px">${name} ✓</div><div style="font-size:18px;font-weight:800;color:${color}">${rate}%</div><div style="font-size:11px;color:#6b7280">✅${success} ❌${(data.cancel||0)} (${total} total)</div></div>`;
+            const total=data.total||0, success=data.success||0, rate=total>0?Math.round(success/total*100):0;
+            return `<div style="background:${color}11;border:1px solid ${color}33;border-radius:8px;padding:8px;flex:1;min-width:120px"><div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:2px">${name}</div><div style="font-size:16px;font-weight:800;color:${color}">${rate}%</div><div style="font-size:10px;color:#6b7280">✅${success} ❌${(data.cancel||0)} (${total})</div></div>`;
         }
-
         body.innerHTML = `
-        <div style="background:${riskBg};border-radius:12px;padding:14px 18px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-            <div><span style="font-size:18px;font-weight:800;color:#1f2937">📱 ${j.phone}</span>
-            ${l.total>0?`<span style="font-size:11px;color:#6b7280;margin-left:8px">${l.total} local orders · ৳${Number(l.total_spent||0).toLocaleString()}</span>`:''}</div>
-            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-                ${co.pathao_rating?`<span style="background:#f3e8ff;color:#7c3aed;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700">Pathao: ${{excellent_customer:'⭐ Excellent',good_customer:'✅ Good',moderate_customer:'⚠️ Moderate',risky_customer:'🚫 Risky',new_customer:'🆕 New'}[co.pathao_rating]||co.pathao_rating}</span>`:''}
-                <span style="background:${riskBg};color:${riskTxt};padding:4px 14px;border-radius:20px;font-size:12px;font-weight:800;border:2px solid ${riskTxt}33">${co.risk_label||'Unknown'}</span>
-            </div>
+        <div style="background:${riskBg};border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+            <div><span style="font-size:14px;font-weight:800;color:#1f2937">📱 ${j.phone}</span>
+            ${l.total>0?`<span style="font-size:10px;color:#6b7280;margin-left:6px">${l.total} orders · ৳${Number(l.total_spent||0).toLocaleString()}</span>`:''}</div>
+            <span style="background:${riskBg};color:${riskTxt};padding:3px 12px;border-radius:20px;font-size:11px;font-weight:800;border:2px solid ${riskTxt}33">${co.risk_label||'Unknown'}</span>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
             ${apiCard('Pathao',p,'#3b82f6')} ${apiCard('Steadfast',s,'#8b5cf6')} ${apiCard('RedX',r,'#ef4444')}
-            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px;flex:1;min-width:140px">
-                <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px">Local Record</div>
-                <div style="font-size:11px;color:#6b7280">✅${l.delivered||0} ❌${l.cancelled||0} 🔄${l.returned||0}</div>
-                <div style="font-size:11px;color:#6b7280">৳${Number(l.total_spent||0).toLocaleString()}</div>
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px;flex:1;min-width:120px">
+                <div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:2px">Local DB</div>
+                <div style="font-size:10px;color:#6b7280">✅${l.delivered||0} ❌${l.cancelled||0} 🔄${l.returned||0}</div>
             </div>
-        </div>
-        ${co.rate>0?`<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span style="color:#374151;font-weight:600">Cross-Merchant Success Rate</span><span style="font-weight:800;color:${co.rate>=70?'#16a34a':co.rate>=40?'#ca8a04':'#dc2626'}">${co.rate}%</span></div><div style="width:100%;height:8px;background:#e5e7eb;border-radius:99px;overflow:hidden"><div style="height:100%;border-radius:99px;background:${co.rate>=70?'#22c55e':co.rate>=40?'#eab308':'#ef4444'};width:${co.rate}%"></div></div></div>`:''}
-        ${l.areas?.length?`<div style="display:flex;gap:6px;flex-wrap:wrap">${l.areas.map(a=>`<span style="background:#f3f4f6;padding:3px 10px;border-radius:20px;font-size:11px;border:1px solid #e5e7eb">${a.area} (${a.cnt})</span>`).join('')}</div>`:''}
-        <div style="margin-top:10px;text-align:center"><a href="<?= adminUrl('pages/courier.php?tab=customer_check') ?>" target="_blank" style="color:#3b82f6;font-size:12px;text-decoration:none">Open full Customer Verify →</a></div>`;
-    })
-    .catch(e => { body.innerHTML = '<div style="padding:20px;color:#dc2626">❌ ' + e.message + '</div>'; });
+        </div>`;
+    }).catch(e => { body.innerHTML = '<div style="padding:16px;color:#dc2626">❌ ' + e.message + '</div>'; });
 }
 </script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

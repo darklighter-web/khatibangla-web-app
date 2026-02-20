@@ -94,7 +94,7 @@ try {
 // ═══════════════════════════════════════
 echo '<h2>2️⃣b Per-Courier Stats (Your Database)</h2>';
 echo '<div class="info">These are REAL counts from your own orders table — always accurate</div>';
-$courierPatterns = ['Pathao'=>['pathao'], 'Steadfast'=>['steadfast','packzy'], 'RedX'=>['redx','red-x','red x']];
+$courierPatterns = ['Pathao'=>['pathao'], 'Steadfast'=>['steadfast'], 'RedX'=>['redx','red-x','red x']];
 echo '<div class="g">';
 foreach ($courierPatterns as $label => $patterns) {
     $conditions = []; $params = [$phoneLike];
@@ -159,9 +159,9 @@ echo '<h3 style="color:#666;font-size:14px">Strategy A: API Endpoint (using your
 $sfApiKey = getSetting('steadfast_api_key','');
 $sfSecKey = getSetting('steadfast_secret_key','');
 if ($sfApiKey && $sfSecKey) {
-    echo '<div class="info">Trying undocumented courier_score endpoints on portal.steadfast.com.bd & portal.packzy.com</div>';
+    echo '<div class="info">Trying courier_score endpoints on portal.packzy.com</div>';
     $sfHeaders = ['Api-Key: '.$sfApiKey, 'Secret-Key: '.$sfSecKey, 'Content-Type: application/json', 'Accept: application/json'];
-    $sfBases = ['https://portal.steadfast.com.bd/api/v1', 'https://portal.packzy.com/api/v1'];
+    $sfBases = ['https://portal.packzy.com/api/v1'];
     $sfEndpoints = ['/courier_score/','/fraud_check/','/courier-score/','/fraud-check/','/check_score/','/score/'];
     $sfFound = false;
     foreach ($sfBases as $sfBase) {
