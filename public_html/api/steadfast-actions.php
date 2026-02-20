@@ -95,8 +95,8 @@ try {
                 
                 // Pathao status mapping
                 $pathaoMap = [
-                    'Pending'=>null, 'Picked'=>null, 'In_Transit'=>null, 'At_Transit'=>null,
-                    'Delivery_Ongoing'=>null, 'Delivered'=>'delivered', 'Partial_Delivered'=>'partial_delivered',
+                    'Pending'=>null, 'Picked'=>'shipped', 'In_Transit'=>'shipped', 'At_Transit'=>'shipped',
+                    'Delivery_Ongoing'=>'shipped', 'Delivered'=>'delivered', 'Partial_Delivered'=>'partial_delivered',
                     'Return'=>'pending_return', 'Return_Ongoing'=>'pending_return', 'Returned'=>'pending_return',
                     'Exchange'=>'pending_return', 'Hold'=>'on_hold', 'Cancelled'=>'pending_cancel',
                     'Payment_Invoice'=>'delivered',
@@ -227,7 +227,10 @@ try {
             ];
             foreach ($fields as $short => $key) {
                 if (isset($input[$short])) {
-                    $sf->saveSetting($key, $input[$short]);
+                    $val = $input[$short];
+                    // Trim whitespace from keys/tokens to prevent auth failures
+                    if (in_array($short, ['api_key', 'secret_key', 'webhook_token'])) $val = trim($val);
+                    $sf->saveSetting($key, $val);
                 }
             }
             echo json_encode(['success' => true, 'message' => 'Settings saved!']);

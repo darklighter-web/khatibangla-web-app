@@ -17,6 +17,8 @@
  *   GET  /payments/{id}             - Get single payment with consignments
  *   GET  /policestations            - Get police stations
  */
+require_once __DIR__ . '/courier-rate-limiter.php';
+
 class SteadfastAPI {
     private $baseUrl = 'https://portal.packzy.com/api/v1';
     private $apiKey;
@@ -25,8 +27,8 @@ class SteadfastAPI {
 
     public function __construct($apiKey = null, $secretKey = null) {
         $this->db = Database::getInstance();
-        $this->apiKey    = $apiKey ?: $this->setting('steadfast_api_key');
-        $this->secretKey = $secretKey ?: $this->setting('steadfast_secret_key');
+        $this->apiKey    = trim($apiKey ?: $this->setting('steadfast_api_key'));
+        $this->secretKey = trim($secretKey ?: $this->setting('steadfast_secret_key'));
     }
 
     public function setting($key) {
@@ -101,9 +103,13 @@ class SteadfastAPI {
     public function getPayments() { return $this->http('GET', '/payments'); }
     public function getPayment($id) { return $this->http('GET', '/payments/' . intval($id)); }
 
-    // ── Police Stations ──
+    // ── Police Stations (cached 24h — static data) ──
     
-    public function getPoliceStations() { return $this->http('GET', '/policestations'); }
+    public function getPoliceStations() {
+        return courierCacheStatic('steadfast_policestations', function() {
+            return $this->http('GET', '/policestations');
+        }, 86400);
+    }
 
     // ── Utility: Upload order from our DB ──
     
@@ -160,7 +166,7 @@ class SteadfastAPI {
                 'courier_tracking_id'    => $trackingCode,
                 'courier_status'         => 'pending',
                 'courier_uploaded_at'    => date('Y-m-d H:i:s'),
-                'order_status'           => 'shipped',
+                'order_status'           => 'ready_to_ship',
                 'updated_at'             => date('Y-m-d H:i:s'),
             ], 'id = ?', [$orderId]);
             
@@ -180,7 +186,7 @@ class SteadfastAPI {
             try {
                 $this->db->insert('order_status_history', [
                     'order_id' => $orderId,
-                    'status'   => 'shipped',
+                    'status'   => 'ready_to_ship',
                     'note'     => "Uploaded to Steadfast. CID: {$cid}",
                 ]);
             } catch (\Throwable $e) {}
@@ -278,12 +284,12 @@ class SteadfastAPI {
                         'courier_tracking_id'    => $trackingCode,
                         'courier_status'         => 'pending',
                         'courier_uploaded_at'    => date('Y-m-d H:i:s'),
-                        'order_status'           => 'shipped',
+                        'order_status'           => 'ready_to_ship',
                         'updated_at'             => date('Y-m-d H:i:s'),
                     ], 'id = ?', [$oid]);
                     
                     try { $this->db->insert('courier_uploads', ['order_id'=>$oid,'courier_provider'=>'steadfast','consignment_id'=>$cid,'tracking_id'=>$trackingCode,'status'=>'uploaded','response_data'=>json_encode($item)]); } catch (\Throwable $e) {}
-                    try { $this->db->insert('order_status_history', ['order_id'=>$oid,'status'=>'shipped','note'=>"Bulk uploaded to Steadfast. CID: {$cid}"]); } catch (\Throwable $e) {}
+                    try { $this->db->insert('order_status_history', ['order_id'=>$oid,'status'=>'ready_to_ship','note'=>"Bulk uploaded to Steadfast. CID: {$cid}"]); } catch (\Throwable $e) {}
                     
                     $results['success']++;
                     $results['uploaded'][] = ['order_id' => $oid, 'consignment_id' => $cid];
@@ -325,7 +331,7 @@ class SteadfastAPI {
         // Map Steadfast status to our status
         $statusMap = [
             'pending'                           => null,
-            'in_review'                         => null,
+            'in_review'                         => 'shipped',
             'delivered'                         => 'delivered',
             'delivered_approval_pending'         => 'delivered',
             'partial_delivered'                 => 'partial_delivered',
@@ -372,7 +378,7 @@ class SteadfastAPI {
      * Get the Steadfast portal URL for a consignment
      */
     public static function portalUrl($consignmentId) {
-        return 'https://portal.steadfast.com.bd/find-consignment?consignment_id=' . urlencode($consignmentId);
+        return 'https://steadfast.com.bd/user/consignment/' . urlencode($consignmentId);
     }
 
     /**
@@ -387,6 +393,11 @@ class SteadfastAPI {
     private function http($method, $path, $data = []) {
         if (!$this->isConfigured()) throw new \Exception('Steadfast API not configured');
         
+        // Rate limit check (80 req/min for Steadfast)
+        if (!courierRateCheck('steadfast', courierRateLimit('steadfast'))) {
+            throw new \Exception('Steadfast rate limit reached (80/min) — try again shortly');
+        }
+
         $url = $this->baseUrl . $path;
         $headers = [
             'Api-Key: ' . $this->apiKey,
@@ -406,14 +417,25 @@ class SteadfastAPI {
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
         }
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
+        
+        // Execute with exponential backoff retry on 429/503
+        $result = courierCurlExec($ch, 'steadfast', "{$method} {$path}", 5);
         curl_close($ch);
         
-        if ($error) throw new \Exception("Steadfast API error: {$error}");
+        if ($result['error']) throw new \Exception("Steadfast API error: {$result['error']}");
         
-        $decoded = json_decode($response, true);
+        $httpCode = intval($result['http_code'] ?? 0);
+        $decoded = json_decode($result['response'], true);
+        
+        // Handle HTTP error codes with clear messages
+        if ($httpCode === 401 || $httpCode === 403) {
+            $apiErr = $decoded['message'] ?? $decoded['error'] ?? '';
+            $keyHint = $this->apiKey ? substr($this->apiKey, 0, 6) . '...' . substr($this->apiKey, -4) : '(empty)';
+            throw new \Exception("Steadfast authentication failed (HTTP {$httpCode}). API Key: {$keyHint}. Re-enter credentials in Settings." . ($apiErr ? " — {$apiErr}" : ''));
+        }
+        if ($httpCode >= 400 && !is_array($decoded)) {
+            throw new \Exception("Steadfast returned HTTP {$httpCode}. Response: " . substr($result['response'] ?? '', 0, 200));
+        }
         if (!is_array($decoded)) throw new \Exception("Invalid response from Steadfast (HTTP {$httpCode})");
         
         return $decoded;

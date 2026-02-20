@@ -8,6 +8,7 @@
  * Or via URL: https://khatibangla.com/api/courier-sync.php?key=YOUR_CRON_KEY
  */
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/courier-rate-limiter.php';
 
 header('Content-Type: application/json');
 
@@ -28,24 +29,31 @@ $limit = min(100, max(10, intval($input['limit'] ?? $_GET['limit'] ?? 50)));
 
 // Status mapping (same as webhook)
 $pathaoMap = [
-    'Pending'=>null, 'Picked'=>null, 'In_Transit'=>null, 'At_Transit'=>null,
-    'Delivery_Ongoing'=>null, 'Delivered'=>'delivered', 'Partial_Delivered'=>'partial_delivered',
+    'Pending'=>null, 'Picked'=>'shipped', 'In_Transit'=>'shipped', 'At_Transit'=>'shipped',
+    'Delivery_Ongoing'=>'shipped', 'Delivered'=>'delivered', 'Partial_Delivered'=>'partial_delivered',
     'Return'=>'pending_return', 'Return_Ongoing'=>'pending_return', 'Returned'=>'pending_return',
     'Exchange'=>'pending_return', 'Hold'=>'on_hold', 'Cancelled'=>'pending_cancel',
     'Payment_Invoice'=>'delivered',
 ];
 $steadfastMap = [
-    'pending'=>null, 'in_review'=>null, 'delivered'=>'delivered',
+    'pending'=>null, 'in_review'=>'shipped', 'delivered'=>'delivered',
     'delivered_approval_pending'=>'delivered', 'partial_delivered'=>'partial_delivered',
     'partial_delivered_approval_pending'=>'partial_delivered',
     'cancelled'=>'pending_cancel', 'cancelled_approval_pending'=>'pending_cancel',
     'hold'=>'on_hold', 'unknown'=>null, 'unknown_approval_pending'=>null,
 ];
+$redxMap = [
+    'pickup-pending'=>null, 'pickup-processing'=>null,
+    'ready-for-delivery'=>'shipped', 'delivery-in-progress'=>'shipped',
+    'delivered'=>'delivered', 'agent-hold'=>'on_hold',
+    'agent-returning'=>'pending_return', 'returned'=>'pending_return',
+    'agent-area-change'=>null, 'cancelled'=>'pending_cancel',
+];
 
 $results = ['total' => 0, 'updated' => 0, 'errors' => 0, 'skipped' => 0, 'details' => []];
 
-// Get all shipped orders with courier tracking (not yet delivered/cancelled/returned)
-$activeStatuses = "'shipped','on_hold','pending_return','pending_cancel','partial_delivered'";
+// Get all active orders with courier tracking (not yet delivered/cancelled/returned)
+$activeStatuses = "'ready_to_ship','shipped','on_hold','pending_return','pending_cancel','partial_delivered'";
 $orders = $db->fetchAll(
     "SELECT id, order_number, order_status, courier_name, courier_tracking_id, courier_consignment_id, pathao_consignment_id 
      FROM orders 
@@ -60,9 +68,10 @@ $orders = $db->fetchAll(
 $results['total'] = count($orders);
 
 // Load API classes
-$pathao = null; $steadfast = null;
+$pathao = null; $steadfast = null; $redx = null;
 $pathaoFile = __DIR__ . '/pathao.php';
 $steadfastFile = __DIR__ . '/steadfast.php';
+$redxFile = __DIR__ . '/redx.php';
 
 if (file_exists($pathaoFile)) {
     require_once $pathaoFile;
@@ -72,6 +81,10 @@ if (file_exists($steadfastFile)) {
     require_once $steadfastFile;
     $steadfast = new SteadfastAPI();
 }
+if (file_exists($redxFile)) {
+    require_once $redxFile;
+    $redx = new RedXAPI();
+}
 
 foreach ($orders as $order) {
     try {
@@ -79,6 +92,12 @@ foreach ($orders as $order) {
         $consignmentId = $order['pathao_consignment_id'] ?: $order['courier_consignment_id'] ?: $order['courier_tracking_id'];
         
         if (empty($consignmentId)) {
+            $results['skipped']++;
+            continue;
+        }
+        
+        // Polling throttle: skip if this order was polled within 15 minutes
+        if (!courierPollThrottle($order['id'], 900)) {
             $results['skipped']++;
             continue;
         }
@@ -100,6 +119,13 @@ foreach ($orders as $order) {
             if ($courierStatus) {
                 $newStatus = $steadfastMap[$courierStatus] ?? null;
             }
+        } elseif (strpos($courierName, 'redx') !== false && $redx && $redx->isConfigured()) {
+            // Poll RedX API
+            $resp = $redx->getParcelInfo($consignmentId);
+            $courierStatus = $resp['parcel']['status'] ?? null;
+            if ($courierStatus) {
+                $newStatus = $redxMap[$courierStatus] ?? null;
+            }
         } else {
             $results['skipped']++;
             continue;
@@ -112,6 +138,12 @@ foreach ($orders as $order) {
         
         // Always update courier_status column with raw value
         $updateData = ['courier_status' => $courierStatus, 'updated_at' => date('Y-m-d H:i:s')];
+        
+        // RedX-specific: also update charge & COD from API response
+        if (strpos($courierName, 'redx') !== false && isset($resp['parcel'])) {
+            if (isset($resp['parcel']['charge'])) $updateData['courier_delivery_charge'] = floatval($resp['parcel']['charge']);
+            if (isset($resp['parcel']['cash_collection_amount'])) $updateData['courier_cod_amount'] = floatval($resp['parcel']['cash_collection_amount']);
+        }
         
         if ($newStatus && $newStatus !== $order['order_status']) {
             // Don't allow backward transitions from terminal states
@@ -152,8 +184,8 @@ foreach ($orders as $order) {
             $results['skipped']++;
         }
         
-        // Throttle to avoid rate limits (100ms between requests)
-        usleep(100000);
+        // Throttle to avoid rate limits (200ms between requests — max ~5 req/sec)
+        usleep(200000);
         
     } catch (\Throwable $e) {
         $results['errors']++;

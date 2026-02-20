@@ -1,12 +1,13 @@
 <?php
 /**
  * Unified Courier Webhook Endpoint
- * Receives status updates from Pathao, Steadfast, CarryBee
+ * Receives status updates from Pathao, Steadfast, CarryBee, RedX
  * 
  * URLs to configure in courier dashboards:
  *   Pathao:    https://khatibangla.com/api/courier-webhook.php?courier=pathao
  *   Steadfast: https://khatibangla.com/api/courier-webhook.php?courier=steadfast
  *   CarryBee:  https://khatibangla.com/api/courier-webhook.php?courier=carrybee
+ *   RedX:      https://khatibangla.com/api/courier-webhook.php?courier=redx&token=YOUR_TOKEN
  * 
  * PATHAO REQUIREMENTS:
  *   - Must return HTTP 202
@@ -97,6 +98,9 @@ try {
             break;
         case 'carrybee':
             $result = handleCarryBee($db, $payload);
+            break;
+        case 'redx':
+            $result = handleRedX($db, $payload);
             break;
         default:
             echo json_encode(['status' => 'error', 'message' => 'Unknown courier: ' . $courier]);
@@ -259,8 +263,11 @@ function handlePathao($db, $payload) {
 // STEADFAST WEBHOOK HANDLER
 // ══════════════════════════════════════════════════════
 function handleSteadfast($db, $payload) {
+    // Status map: courier status → our status
+    // 'pending' and 'in_review' only transition if order is currently 'ready_to_ship'
     $statusMap = [
-        'pending' => null, 'in_review' => null,
+        'pending' => null,  // Don't auto-transition on pending
+        'in_review' => '_rts_to_shipped', // Special: only from ready_to_ship
         'delivered' => 'delivered', 'delivered_approval_pending' => 'delivered',
         'partial_delivered' => 'partial_delivered', 'partial_delivered_approval_pending' => 'partial_delivered',
         'cancelled' => 'pending_cancel', 'cancelled_approval_pending' => 'pending_cancel',
@@ -274,12 +281,25 @@ function handleSteadfast($db, $payload) {
     
     if (empty($consignmentId) && empty($invoice)) return 'No identifier';
     
-    // Auth check
+    // Auth check — Bearer token
     $webhookToken = '';
     try { $webhookToken = getSetting('steadfast_webhook_token', ''); } catch (\Throwable $e) {}
     if ($webhookToken) {
-        $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-        if ($authHeader !== 'Bearer ' . $webhookToken) { http_response_code(401); return 'Unauthorized'; }
+        // Try multiple header sources (some servers strip Authorization)
+        $authHeader = $_SERVER['HTTP_AUTHORIZATION'] 
+            ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] 
+            ?? (function_exists('getallheaders') ? (getallheaders()['Authorization'] ?? getallheaders()['authorization'] ?? '') : '')
+            ?? '';
+        $providedToken = '';
+        if (stripos($authHeader, 'Bearer ') === 0) {
+            $providedToken = trim(substr($authHeader, 7));
+        } else {
+            $providedToken = trim($authHeader);
+        }
+        if ($providedToken !== $webhookToken) {
+            http_response_code(401);
+            return 'Unauthorized — token mismatch';
+        }
     }
     
     // Find order
@@ -345,6 +365,11 @@ function processStatusUpdate($db, $order, $courierStatus, $map, $courierName, $p
     $newStatus = $map[$courierStatus] ?? null;
     $extraUpdate['courier_status'] = $courierStatus;
     
+    // Special handling: _rts_to_shipped only transitions from ready_to_ship
+    if ($newStatus === '_rts_to_shipped') {
+        $newStatus = ($order['order_status'] === 'ready_to_ship') ? 'shipped' : null;
+    }
+    
     if (!$newStatus) {
         try { $db->update('orders', $extraUpdate, 'id = ?', [$order['id']]); } catch (\Throwable $e) {}
         return "#{$order['order_number']}: '{$courierStatus}' logged";
@@ -367,6 +392,68 @@ function processStatusUpdate($db, $order, $courierStatus, $map, $courierName, $p
     
     _webhookLog($courierName, "#{$order['order_number']}: {$currentStatus} → {$newStatus}");
     return "#{$order['order_number']}: {$currentStatus} → {$newStatus}";
+}
+
+
+// ══════════════════════════════════════════════════════
+// REDX WEBHOOK HANDLER
+// Statuses: ready-for-delivery, delivery-in-progress,
+//   delivered, agent-hold, agent-returning, returned,
+//   agent-area-change
+// ══════════════════════════════════════════════════════
+function handleRedX($db, $payload) {
+    $statusMap = [
+        'ready-for-delivery'   => '_rts_to_shipped',  // Parcel received → ship from RTS
+        'delivery-in-progress' => '_rts_to_shipped',   // Dispatched → ship from RTS
+        'delivered'            => 'delivered',
+        'agent-hold'           => 'on_hold',
+        'agent-returning'      => 'pending_return',
+        'returned'             => 'pending_return',
+        'agent-area-change'    => null,         // Area change in progress — track only
+        'cancelled'            => 'pending_cancel',
+    ];
+
+    $trackingNumber = $payload['tracking_number'] ?? '';
+    $invoiceNumber  = $payload['invoice_number'] ?? '';
+    $courierStatus  = $payload['status'] ?? '';
+    $messageEn      = $payload['message_en'] ?? '';
+    $messageBn      = $payload['message_bn'] ?? '';
+    $timestamp      = $payload['timestamp'] ?? '';
+
+    if (empty($trackingNumber) && empty($invoiceNumber)) return 'No identifier';
+
+    // Auth check — verify token from query parameter
+    $webhookToken = '';
+    try { $webhookToken = getSetting('redx_webhook_token', ''); } catch (\Throwable $e) {}
+    if ($webhookToken) {
+        $providedToken = $_GET['token'] ?? '';
+        if ($providedToken !== $webhookToken) {
+            http_response_code(401);
+            return 'Unauthorized — invalid webhook token';
+        }
+    }
+
+    // Find order — try tracking_number first, then invoice_number
+    $order = null;
+    if ($trackingNumber) {
+        $order = $db->fetch(
+            "SELECT * FROM orders WHERE courier_tracking_id = ? OR courier_consignment_id = ?",
+            [$trackingNumber, $trackingNumber]
+        );
+    }
+    if (!$order && $invoiceNumber) {
+        $order = $db->fetch("SELECT * FROM orders WHERE order_number = ?", [$invoiceNumber]);
+    }
+
+    if (!$order) return "Order not found (tracking: {$trackingNumber}, invoice: {$invoiceNumber})";
+
+    $extraUpdate = ['updated_at' => date('Y-m-d H:i:s')];
+    if ($messageEn) $extraUpdate['courier_tracking_message'] = $messageEn;
+    if ($trackingNumber && empty($order['courier_tracking_id'])) $extraUpdate['courier_tracking_id'] = $trackingNumber;
+    if ($trackingNumber && empty($order['courier_consignment_id'])) $extraUpdate['courier_consignment_id'] = $trackingNumber;
+    if (empty($order['courier_name'])) $extraUpdate['courier_name'] = 'RedX';
+
+    return processStatusUpdate($db, $order, $courierStatus, $statusMap, 'RedX', $payload, $extraUpdate);
 }
 
 

@@ -273,7 +273,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <div class="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center"><span class="text-2xl font-bold text-green-600">S</span></div>
                     <div>
                         <h3 class="font-bold text-gray-800 text-lg">Steadfast Courier API</h3>
-                        <p class="text-xs text-gray-500">Get credentials from <a href="https://portal.steadfast.com.bd/user/api" target="_blank" class="text-blue-600 underline">portal.steadfast.com.bd → API</a></p>
+                        <p class="text-xs text-gray-500">Get credentials from <a href="https://portal.packzy.com/user/api" target="_blank" class="text-blue-600 underline">portal.packzy.com → API</a></p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2 px-3 py-1.5 rounded-full <?=$sfConnected?'bg-green-50 border border-green-200':'bg-gray-50 border'?>">
@@ -301,7 +301,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <div class="mt-4">
                     <label class="block text-xs font-medium text-gray-600 mb-1">Webhook Bearer Token</label>
                     <input type="text" id="sf_webhook_token" value="<?=e($sf['webhook_token'])?>" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono bg-white" placeholder="Token for webhook authentication (optional)">
-                    <p class="text-[10px] text-gray-400 mt-1">Set this in <a href="https://portal.steadfast.com.bd/user/webhook/add" target="_blank" class="text-blue-500 underline">Steadfast Webhook Settings</a> → Auth Token (Bearer)</p>
+                    <p class="text-[10px] text-gray-400 mt-1">Set this in <a href="https://portal.packzy.com/user/webhook/add" target="_blank" class="text-blue-500 underline">Steadfast Webhook Settings</a> → Auth Token (Bearer)</p>
                 </div>
             </div>
 
@@ -355,7 +355,7 @@ require_once __DIR__ . '/../includes/header.php';
         <!-- Webhook Info -->
         <div class="bg-white rounded-xl shadow-sm border p-6">
             <h4 class="text-sm font-bold text-gray-800 mb-3">🔗 Webhook Configuration</h4>
-            <p class="text-xs text-gray-500 mb-3">Set this URL in your <a href="https://portal.steadfast.com.bd/user/webhook/add" target="_blank" class="text-blue-600 underline">Steadfast Webhook Settings</a>:</p>
+            <p class="text-xs text-gray-500 mb-3">Set this URL in your <a href="https://portal.packzy.com/user/webhook/add" target="_blank" class="text-blue-600 underline">Steadfast Webhook Settings</a>:</p>
             <div class="bg-blue-50 rounded-lg border border-blue-200 p-3">
                 <div class="flex items-center justify-between mb-1">
                     <span class="text-xs font-semibold text-blue-700">Callback URL</span>
@@ -407,10 +407,10 @@ require_once __DIR__ . '/../includes/header.php';
         <div class="bg-white rounded-xl shadow-sm border p-6">
             <h4 class="text-sm font-bold text-gray-800 mb-3">🔗 Quick Links</h4>
             <div class="space-y-2">
-                <a href="https://portal.steadfast.com.bd" target="_blank" class="block text-xs text-blue-600 hover:underline">📦 Steadfast Portal</a>
-                <a href="https://portal.steadfast.com.bd/user/api" target="_blank" class="block text-xs text-blue-600 hover:underline">🔑 API Settings</a>
-                <a href="https://portal.steadfast.com.bd/user/webhook/add" target="_blank" class="block text-xs text-blue-600 hover:underline">🔗 Webhook Settings</a>
-                <a href="https://portal.steadfast.com.bd/user/consignments" target="_blank" class="block text-xs text-blue-600 hover:underline">📋 All Consignments</a>
+                <a href="https://portal.packzy.com" target="_blank" class="block text-xs text-blue-600 hover:underline">📦 Steadfast Portal</a>
+                <a href="https://portal.packzy.com/user/api" target="_blank" class="block text-xs text-blue-600 hover:underline">🔑 API Settings</a>
+                <a href="https://portal.packzy.com/user/webhook/add" target="_blank" class="block text-xs text-blue-600 hover:underline">🔗 Webhook Settings</a>
+                <a href="https://portal.packzy.com/user/consignments" target="_blank" class="block text-xs text-blue-600 hover:underline">📋 All Consignments</a>
             </div>
         </div>
 
@@ -430,7 +430,7 @@ function sfSaveSettings(){sfPost('save_settings',{api_key:document.getElementByI
 function sfTestConnection(){sfPost('test_connection',{api_key:document.getElementById('sf_api_key').value,secret_key:document.getElementById('sf_secret_key').value}).then(function(d){if(d.success){sfMsg('Connected! Balance: ৳'+Number(d.balance).toLocaleString(),true);document.getElementById('sf-balance').textContent='৳'+Number(d.balance).toLocaleString()}else sfMsg(d.error||'Connection failed',false)}).catch(function(e){sfMsg(e.message,false)})}
 function sfCheckBalance(){sfPost('check_balance').then(function(d){if(d.success){document.getElementById('sf-balance').textContent='৳'+Number(d.balance).toLocaleString();sfMsg('Balance: ৳'+Number(d.balance).toLocaleString(),true)}else sfMsg(d.error||'Failed',false)}).catch(function(e){sfMsg(e.message,false)})}
 function sfSyncAll(){sfMsg('Syncing...',true);sfPost('bulk_sync',{limit:50}).then(function(d){sfMsg('Synced '+(d.total||0)+' orders: '+(d.updated||0)+' updated, '+(d.errors||0)+' errors',!d.errors)}).catch(function(e){sfMsg(e.message,false)})}
-function sfLookup(){var c=document.getElementById('sf_lookup_cid').value.trim();if(!c)return;var e=document.getElementById('sf_lookup_result');e.classList.remove('hidden');e.className='mt-3 p-3 rounded-lg text-sm bg-blue-50 text-blue-700';e.textContent='🔍 Searching...';sfPost('check_consignment',{consignment_id:c}).then(function(d){if(d.success&&d.data){var i=d.data;e.innerHTML='<b>CID: '+(i.consignment_id||c)+'</b><br>Status: <b>'+(i.delivery_status||'?')+'</b> | Invoice: '+(i.invoice||'—')+' | COD: ৳'+(i.cod_amount||0)+(i.tracking_message?'<br>📍 '+i.tracking_message:'')+'<br><a href="https://portal.steadfast.com.bd/find-consignment?consignment_id='+(i.consignment_id||c)+'" target="_blank" class="text-blue-600 underline text-xs">Open in Steadfast →</a>'}else{e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+(d.error||'Not found')}}).catch(function(x){e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+x.message})}
+function sfLookup(){var c=document.getElementById('sf_lookup_cid').value.trim();if(!c)return;var e=document.getElementById('sf_lookup_result');e.classList.remove('hidden');e.className='mt-3 p-3 rounded-lg text-sm bg-blue-50 text-blue-700';e.textContent='🔍 Searching...';sfPost('check_consignment',{consignment_id:c}).then(function(d){if(d.success&&d.data){var i=d.data;e.innerHTML='<b>CID: '+(i.consignment_id||c)+'</b><br>Status: <b>'+(i.delivery_status||'?')+'</b> | Invoice: '+(i.invoice||'—')+' | COD: ৳'+(i.cod_amount||0)+(i.tracking_message?'<br>📍 '+i.tracking_message:'')+'<br><a href="https://steadfast.com.bd/user/consignment/'+(i.consignment_id||c)+'" target="_blank" class="text-blue-600 underline text-xs">Open in Steadfast →</a>'}else{e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+(d.error||'Not found')}}).catch(function(x){e.className='mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700';e.textContent='❌ '+x.message})}
 // Load webhook logs
 sfPost('webhook_logs',{limit:10}).then(function(d){var e=document.getElementById('sf-wh-logs');if(d.logs&&d.logs.length){e.innerHTML=d.logs.map(function(l){var p='';try{var j=JSON.parse(l.payload);p=(j.status||j.notification_type||'')+' '+(j.invoice||'')}catch(x){}return '<div class="py-1 border-b border-gray-100"><span class="text-gray-400">'+(l.created_at||'').substring(5,16)+'</span> '+p+(l.result?' → <b>'+l.result.substring(0,50)+'</b>':'')+'</div>'}).join('')}else e.innerHTML='<p class="text-gray-400">No webhook logs yet</p>'}).catch(function(){document.getElementById('sf-wh-logs').innerHTML='<p class="text-gray-400">—</p>'});
 </script>
@@ -584,7 +584,7 @@ foreach ($whLogs as $wl) {
                 <code class="flex-1 text-xs font-mono text-gray-700 bg-blue-50 px-3 py-2 rounded-lg border break-all"><?= e($sfWhUrl) ?></code>
                 <button onclick="copyUrl('<?= e($sfWhUrl) ?>', this)" class="text-xs bg-white px-2 py-1 rounded border hover:bg-gray-50">📋</button>
             </div>
-            <p class="text-[10px] text-gray-500 mb-2">Set in <a href="https://portal.steadfast.com.bd/user/webhook/add" target="_blank" class="text-blue-600 underline">Steadfast → Webhook Settings</a></p>
+            <p class="text-[10px] text-gray-500 mb-2">Set in <a href="https://portal.packzy.com/user/webhook/add" target="_blank" class="text-blue-600 underline">Steadfast → Webhook Settings</a></p>
             <p class="text-xs text-gray-400">Auth: Bearer token configured in Steadfast tab</p>
             <p class="text-xs mt-2"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium"><?= $sfLogCount ?> recent hits</span></p>
         </div>

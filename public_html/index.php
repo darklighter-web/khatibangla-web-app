@@ -2,6 +2,11 @@
 /**
  * Main Router / Entry Point
  */
+
+// Prevent stale cached error pages from being served
+header('X-LiteSpeed-Cache-Control: no-cache');
+http_response_code(200); // Explicitly set 200 OK
+
 require_once __DIR__ . '/includes/session.php';
 
 require_once __DIR__ . '/includes/functions.php';

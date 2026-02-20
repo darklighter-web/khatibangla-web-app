@@ -114,7 +114,43 @@ function csrfField() {
 }
 
 function generateOrderNumber() {
-    return 'ORD-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -5));
+    global $db;
+    try {
+        $format = getSetting('order_number_format', 'numeric'); // numeric, prefix_numeric, prefix_sequential
+        $prefix = getSetting('order_prefix', '');
+        $digits = intval(getSetting('order_number_digits', 5));
+        if ($digits < 4) $digits = 4;
+        if ($digits > 8) $digits = 8;
+        
+        if ($format === 'prefix_sequential' && $prefix) {
+            // Format: M163779 - prefix + sequential number (no padding, auto-increment)
+            $pattern = $db->fetch("SELECT MAX(CAST(SUBSTRING(order_number, ?) AS UNSIGNED)) as max_num FROM orders WHERE order_number LIKE ?", [strlen($prefix)+1, $prefix.'%']);
+            $next = max(intval($pattern['max_num'] ?? 0) + 1, 1);
+            $num = $prefix . $next;
+            // Ensure unique
+            $exists = $db->fetch("SELECT id FROM orders WHERE order_number = ?", [$num]);
+            if ($exists) $num = $prefix . ($next + 1);
+            return $num;
+        } elseif ($format === 'prefix_numeric' && $prefix) {
+            // Format: ORD-00123 - prefix + zero-padded number
+            $pattern = $db->fetch("SELECT MAX(CAST(REPLACE(SUBSTRING(order_number, ?), '-', '') AS UNSIGNED)) as max_num FROM orders WHERE order_number LIKE ?", [strlen($prefix)+1, $prefix.'%']);
+            $next = max(intval($pattern['max_num'] ?? 0) + 1, 1);
+            $num = $prefix . str_pad($next, $digits, '0', STR_PAD_LEFT);
+            $exists = $db->fetch("SELECT id FROM orders WHERE order_number = ?", [$num]);
+            if ($exists) $num = $prefix . str_pad($next + 1, $digits, '0', STR_PAD_LEFT);
+            return $num;
+        } else {
+            // Default numeric: 00123
+            $last = $db->fetch("SELECT MAX(CAST(order_number AS UNSIGNED)) as max_num FROM orders WHERE order_number REGEXP '^[0-9]+$'");
+            $next = max(intval($last['max_num'] ?? 0) + 1, intval($db->fetch("SELECT MAX(id) as m FROM orders")['m'] ?? 0) + 1);
+            $num = str_pad($next, $digits, '0', STR_PAD_LEFT);
+            $exists = $db->fetch("SELECT id FROM orders WHERE order_number = ?", [$num]);
+            if ($exists) $num = str_pad($next + 1, $digits, '0', STR_PAD_LEFT);
+            return $num;
+        }
+    } catch (\Throwable $e) {
+        return date('ymd') . rand(100, 999);
+    }
 }
 
 function hashPassword($password) {

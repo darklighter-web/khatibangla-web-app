@@ -326,8 +326,24 @@ try {
 
             $storeId = intval($data['store_id'] ?? 0);
             if (!$storeId) {
+                try { $row = $db->fetch("SELECT setting_value FROM site_settings WHERE setting_key = 'pathao_store_id'"); $storeId = intval($row['setting_value'] ?? 0); } catch (\Throwable $e) {}
+            }
+            if (!$storeId) {
                 try { $row = $db->fetch("SELECT setting_value FROM site_settings WHERE setting_key = 'store_id'"); $storeId = intval($row['setting_value'] ?? 0); } catch (\Throwable $e) {}
             }
+            // Auto-fetch store_id from Pathao API if not set
+            if (!$storeId) {
+                try {
+                    $storesResp = $pathao->getStores();
+                    $stores = $storesResp['data']['data'] ?? $storesResp['data'] ?? [];
+                    if (!empty($stores[0]['store_id'])) {
+                        $storeId = intval($stores[0]['store_id']);
+                        // Cache it for future use
+                        try { $db->query("INSERT INTO site_settings (setting_key, setting_value) VALUES ('pathao_store_id', ?) ON DUPLICATE KEY UPDATE setting_value = ?", [$storeId, $storeId]); } catch (\Throwable $e) {}
+                    }
+                } catch (\Throwable $e) {}
+            }
+            if (!$storeId) { echo json_encode(['success' => false, 'message' => 'Pathao store_id not found. Go to Settings → Pathao and set your Store ID, or ensure Pathao API credentials are correct.']); break; }
             $codAmount = ($o['payment_method'] === 'cod') ? floatval($o['total']) : 0;
 
             // Build product description
@@ -372,7 +388,7 @@ try {
                     'courier_tracking_id'    => $cid,
                     'courier_status'         => 'pending',
                     'courier_uploaded_at'    => date('Y-m-d H:i:s'),
-                    'order_status'           => 'shipped',
+                    'order_status'           => 'ready_to_ship',
                     'pathao_city_id'         => $cityId,
                     'pathao_zone_id'         => $zoneId,
                     'pathao_area_id'         => $areaId,
@@ -383,7 +399,7 @@ try {
                 if ($areaName !== '') $updateData['delivery_area_name'] = $areaName;
                 $db->update('orders', $updateData, 'id = ?', [$orderId]);
                 try { $db->insert('courier_uploads', ['order_id'=>$orderId,'courier_provider'=>'pathao','consignment_id'=>$cid,'status'=>'uploaded','response_data'=>json_encode($resp)]); } catch (\Throwable $e) {}
-                try { $db->insert('order_status_history', ['order_id'=>$orderId,'status'=>'shipped','note'=>'Uploaded to Pathao. CID: '.$cid,'changed_by'=>$_SESSION['admin_id']??null]); } catch (\Throwable $e) {}
+                try { $db->insert('order_status_history', ['order_id'=>$orderId,'status'=>'ready_to_ship','note'=>'Uploaded to Pathao. CID: '.$cid,'changed_by'=>$_SESSION['admin_id']??null]); } catch (\Throwable $e) {}
                 echo json_encode(['success' => true, 'consignment_id' => $cid, 'message' => 'Uploaded to Pathao']);
             } else {
                 $errMsg = $resp['message'] ?? 'Pathao upload failed';

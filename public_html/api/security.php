@@ -237,6 +237,26 @@ switch ($action) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
         break;
+    
+    case 'clear_auto_blocks':
+        try {
+            // Clear all auto-blocked IPs (from rate limits, scanner detection, etc.)
+            $deleted = 0;
+            try {
+                $count = $db->fetch("SELECT COUNT(*) as c FROM security_ip_rules WHERE rule_type = 'block' AND auto_blocked = 1");
+                $deleted = intval($count['c'] ?? 0);
+                $db->query("DELETE FROM security_ip_rules WHERE rule_type = 'block' AND auto_blocked = 1");
+            } catch (\Throwable $e) {
+                // auto_blocked column may not exist yet — clear all timed blocks instead
+                $count = $db->fetch("SELECT COUNT(*) as c FROM security_ip_rules WHERE rule_type = 'block' AND expires_at IS NOT NULL");
+                $deleted = intval($count['c'] ?? 0);
+                $db->query("DELETE FROM security_ip_rules WHERE rule_type = 'block' AND expires_at IS NOT NULL");
+            }
+            echo json_encode(['success' => true, 'message' => "Cleared {$deleted} auto-blocked IPs. All visitors can now access the site."]);
+        } catch (\Throwable $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
 
     // ═══════════════════════════════════════
     // LOGIN ATTEMPTS

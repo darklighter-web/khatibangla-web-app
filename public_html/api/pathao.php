@@ -4,6 +4,8 @@
  * Production: https://api-hermes.pathao.com
  * Sandbox:    https://courier-api-sandbox.pathao.com
  */
+require_once __DIR__ . '/courier-rate-limiter.php';
+
 class PathaoAPI {
     private $baseUrl;
     private $clientId;
@@ -28,7 +30,7 @@ class PathaoAPI {
             : 'https://api-hermes.pathao.com';
     }
 
-    private function setting($key) {
+    public function setting($key) {
         try {
             $row = $this->db->fetch("SELECT setting_value FROM site_settings WHERE setting_key = ?", [$key]);
             return $row ? $row['setting_value'] : '';
@@ -131,9 +133,22 @@ class PathaoAPI {
     // ========================
     // LOCATION ENDPOINTS
     // ========================
-    public function getCities()          { return $this->authed('GET', '/aladdin/api/v1/city-list'); }
-    public function getZones($cityId)    { return $this->authed('GET', "/aladdin/api/v1/cities/{$cityId}/zone-list"); }
-    public function getAreas($zoneId)    { return $this->authed('GET', "/aladdin/api/v1/zones/{$zoneId}/area-list"); }
+    // Static data endpoints — cached 24 hours to reduce API calls
+    public function getCities() {
+        return courierCacheStatic('pathao_cities', function() {
+            return $this->authed('GET', '/aladdin/api/v1/city-list');
+        }, 86400);
+    }
+    public function getZones($cityId) {
+        return courierCacheStatic("pathao_zones_{$cityId}", function() use ($cityId) {
+            return $this->authed('GET', "/aladdin/api/v1/cities/{$cityId}/zone-list");
+        }, 86400);
+    }
+    public function getAreas($zoneId) {
+        return courierCacheStatic("pathao_areas_{$zoneId}", function() use ($zoneId) {
+            return $this->authed('GET', "/aladdin/api/v1/zones/{$zoneId}/area-list");
+        }, 86400);
+    }
 
     // ========================
     // STORES
@@ -387,10 +402,92 @@ class PathaoAPI {
             return ['error' => 'RedX credentials not configured'];
         }
 
-        // Normalize RedX login phone: needs 88 prefix
-        $loginPhone = '88' . ltrim($redxPhone, '0');
+        // Get cached token (or login once and cache for 12 hours)
+        $token = $this->getRedxCachedToken($redxPhone, $redxPassword);
+        if ($token === '__rate_limited__') return ['error' => 'RedX rate limited (429) — wait 10 min'];
+        if (!$token) return ['error' => 'RedX login failed — check credentials'];
 
-        // Step 1: Login
+        // Query phone: 8801XXXXXXXXX format
+        $cleanPhone = preg_replace('/[^0-9]/', '', $phone);
+        if (substr($cleanPhone, 0, 2) === '88') $cleanPhone = substr($cleanPhone, 2);
+        if ($cleanPhone[0] !== '0') $cleanPhone = '0' . $cleanPhone;
+        $queryPhone = '88' . $cleanPhone;
+
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => 'https://redx.com.bd/api/redx_se/admin/parcel/customer-success-return-rate?phoneNumber=' . urlencode($queryPhone),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_HTTPHEADER => [
+                'Accept: application/json, text/plain, */*',
+                'Authorization: Bearer ' . $token,
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            ],
+            CURLOPT_SSL_VERIFYPEER => false,
+        ]);
+        $dataResp = curl_exec($ch);
+        $dataCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        // If token expired (401), clear cache and retry once
+        if ($dataCode === 401) {
+            try { $this->db->update('site_settings', ['setting_value' => ''], 'setting_key = ?', ['redx_fraud_token']); } catch (\Throwable $e) {}
+            $token = $this->getRedxCachedToken($redxPhone, $redxPassword);
+            if (!$token || $token === '__rate_limited__') return ['error' => 'RedX re-login failed'];
+
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => 'https://redx.com.bd/api/redx_se/admin/parcel/customer-success-return-rate?phoneNumber=' . urlencode($queryPhone),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 15,
+                CURLOPT_HTTPHEADER => [
+                    'Accept: application/json, text/plain, */*',
+                    'Authorization: Bearer ' . $token,
+                    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                ],
+                CURLOPT_SSL_VERIFYPEER => false,
+            ]);
+            $dataResp = curl_exec($ch);
+            $dataCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+        }
+
+        $result = json_decode($dataResp, true);
+        if (!$result || $dataCode >= 400) {
+            return ['error' => 'RedX fraud check failed (HTTP ' . $dataCode . ')', 'raw' => substr($dataResp, 0, 300)];
+        }
+
+        $data = $result['data'] ?? $result;
+        return [
+            'deliveredParcels' => intval($data['deliveredParcels'] ?? 0),
+            'totalParcels'     => intval($data['totalParcels'] ?? 0),
+            'cancel'           => intval(($data['totalParcels'] ?? 0) - ($data['deliveredParcels'] ?? 0)),
+            'source'           => 'redx_api',
+            'raw'              => $data,
+        ];
+    }
+
+    /**
+     * Get RedX token from cache or login once and cache for 12 hours
+     */
+    private function getRedxCachedToken($redxPhone, $redxPassword) {
+        // Check for cached token
+        try {
+            $cached = $this->db->fetch("SELECT setting_value FROM site_settings WHERE setting_key = 'redx_fraud_token'");
+            if ($cached && !empty($cached['setting_value'])) {
+                $tokenData = json_decode($cached['setting_value'], true);
+                if ($tokenData && !empty($tokenData['token']) && ($tokenData['expires'] ?? 0) > time()) {
+                    return $tokenData['token'];
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        // Token expired/missing — login once
+        $cleanRp = preg_replace('/[^0-9]/', '', $redxPhone);
+        if (substr($cleanRp, 0, 2) === '88') $cleanRp = substr($cleanRp, 2);
+        if ($cleanRp[0] !== '0') $cleanRp = '0' . $cleanRp;
+        $loginPhone = '88' . $cleanRp;
+
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL => 'https://api.redx.com.bd/v4/auth/login',
@@ -409,46 +506,30 @@ class PathaoAPI {
         $loginCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
+        if ($loginCode === 429) return '__rate_limited__';
+
         $loginData = json_decode($loginResp, true);
-        $redxToken = $loginData['data']['accessToken'] ?? '';
-        if (!$redxToken) {
-            return ['error' => 'RedX login failed (HTTP ' . $loginCode . '): ' . ($loginData['message'] ?? 'no token')];
-        }
+        $token = $loginData['data']['accessToken'] ?? '';
+        if (!$token) return null;
 
-        // Step 2: Get fraud data
-        $queryPhone = '88' . ltrim($phone, '0');
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => 'https://redx.com.bd/api/redx_se/admin/parcel/customer-success-return-rate?phoneNumber=' . urlencode($queryPhone),
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 15,
-            CURLOPT_HTTPHEADER => [
-                'Accept: application/json, text/plain, */*',
-                'Authorization: Bearer ' . $redxToken,
-                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            ],
-            CURLOPT_SSL_VERIFYPEER => false,
-        ]);
-        $dataResp = curl_exec($ch);
-        $dataCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        $result = json_decode($dataResp, true);
-        if (!$result || $dataCode >= 400) {
-            if ($dataCode === 401) {
-                return ['error' => 'RedX token expired or invalid'];
+        // Cache for 12 hours
+        $tokenJson = json_encode(['token' => $token, 'expires' => time() + 43200]);
+        try {
+            $exists = $this->db->fetch("SELECT id FROM site_settings WHERE setting_key = 'redx_fraud_token'");
+            if ($exists) {
+                $this->db->update('site_settings', ['setting_value' => $tokenJson], 'setting_key = ?', ['redx_fraud_token']);
+            } else {
+                $this->db->insert('site_settings', [
+                    'setting_key' => 'redx_fraud_token',
+                    'setting_value' => $tokenJson,
+                    'setting_type' => 'text',
+                    'setting_group' => 'courier',
+                    'label' => 'RedX Fraud Token Cache',
+                ]);
             }
-            return ['error' => 'RedX fraud check failed (HTTP ' . $dataCode . ')', 'raw' => substr($dataResp, 0, 300)];
-        }
+        } catch (\Throwable $e) {}
 
-        $data = $result['data'] ?? $result;
-        return [
-            'deliveredParcels' => intval($data['deliveredParcels'] ?? 0),
-            'totalParcels'     => intval($data['totalParcels'] ?? 0),
-            'cancel'           => intval(($data['totalParcels'] ?? 0) - ($data['deliveredParcels'] ?? 0)),
-            'source'           => 'redx_api',
-            'raw'              => $data,
-        ];
+        return $token;
     }
 
     // ========================
@@ -925,6 +1006,11 @@ class PathaoAPI {
     }
 
     private function http($method, $path, $data = [], $auth = true) {
+        // Rate limit check (100 req/min for Pathao)
+        if (!courierRateCheck('pathao', courierRateLimit('pathao'))) {
+            throw new Exception('Pathao rate limit reached (100/min) — try again shortly');
+        }
+
         $url = $this->baseUrl . $path;
         $headers = ['Content-Type: application/json', 'Accept: application/json'];
         if ($auth && $this->accessToken) {
@@ -944,12 +1030,41 @@ class PathaoAPI {
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
         }
 
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
+        // Execute with exponential backoff retry on 429/503
+        $result = courierCurlExec($ch, 'pathao', "{$method} {$path}", 5);
         curl_close($ch);
 
+        $response = $result['response'];
+        $httpCode = $result['http_code'];
+        $error    = $result['error'];
+
         if ($error) throw new Exception("Curl error: {$error}");
+
+        // Token expired — try refreshing once
+        if ($httpCode === 401 && $auth) {
+            $this->accessToken = null;
+            $this->tokenExpiry = 0;
+            $token = $this->getAccessToken(true);
+            if ($token) {
+                // Retry the request with new token
+                $headers = array_map(function($h) use ($token) {
+                    return strpos($h, 'Authorization:') === 0 ? 'Authorization: Bearer ' . $token : $h;
+                }, $headers);
+                $ch2 = curl_init();
+                curl_setopt_array($ch2, [
+                    CURLOPT_URL => $url, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30,
+                    CURLOPT_HTTPHEADER => $headers, CURLOPT_SSL_VERIFYPEER => false,
+                ]);
+                if ($method === 'POST') {
+                    curl_setopt($ch2, CURLOPT_POST, true);
+                    curl_setopt($ch2, CURLOPT_POSTFIELDS, json_encode($data));
+                }
+                $result2 = courierCurlExec($ch2, 'pathao', "{$method} {$path} (token-refresh)", 2);
+                curl_close($ch2);
+                $response = $result2['response'];
+                $httpCode = $result2['http_code'];
+            }
+        }
 
         // Safe log - silently fail if table doesn't exist
         try {
