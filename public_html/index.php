@@ -84,6 +84,13 @@ switch ($page) {
     case 'checkout':
         include __DIR__ . '/pages/cart.php';
         break;
+    
+    case 'lp':
+        $pageSlug = $param1;
+        $_GET['slug'] = $param1;
+        $lpPreview = isset($_GET['preview']) ? $_GET['preview'] : '';
+        include __DIR__ . '/pages/landing-page.php';
+        break;
         
     case 'login':
     case 'register':
