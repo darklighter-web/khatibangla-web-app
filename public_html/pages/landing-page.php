@@ -551,24 +551,21 @@ foreach ($_lpFormFields as $_cf):
 ?>
 <?php if ($_k === 'product_selector'): ?>
             <!-- Product Selector with Quantity -->
-            <?php 
-            // Count available products with real_product_id
-            $_pCount = 0;
-            foreach ($allProducts as $_pc2) { if (intval($_pc2['real_product_id'] ?? 0) > 0) $_pCount++; }
-            if ($_pCount > 0): ?>
+            <?php if (count($allProducts) > 0): ?>
             <div id="lpProdSelector">
                 <label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:6px"><?= $_l ?></label>
                 <div id="lpProdList" style="display:flex;flex-direction:column;gap:6px">
                 <?php foreach ($allProducts as $_pi => $_pp): 
                     $_ppId = intval($_pp['real_product_id'] ?? 0);
-                    if (!$_ppId) continue;
-                    $_ppName = htmlspecialchars($_pp['name'] ?? '');
+                    $_ppName = htmlspecialchars($_pp['name'] ?? 'পণ্য '.($_pi+1));
                     $_ppPrice = floatval($_pp['price'] ?? 0);
                     $_ppImg = $_pp['image'] ?? '';
                     $_ppDefault = ($_pi === ($settings['default_product'] ?? -1));
+                    // Use real_product_id if available, otherwise use negative index as placeholder
+                    $_ppVal = $_ppId > 0 ? $_ppId : -($_pi + 1);
                 ?>
-                    <label class="lp-prod-opt<?= $_ppDefault ? ' lp-prod-active' : '' ?>" data-pid="<?= $_ppId ?>" data-price="<?= $_ppPrice ?>" data-idx="<?= $_pi ?>" onclick="lpPickProduct(this)" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid <?= $_ppDefault ? $pc : '#e5e7eb' ?>;border-radius:10px;cursor:pointer;transition:all .2s;background:<?= $_ppDefault ? $pc.'08' : '#fff' ?>">
-                        <input type="radio" name="lp_product" value="<?= $_ppId ?>" <?= $_ppDefault ? 'checked' : '' ?> style="accent-color:<?= $pc ?>;flex-shrink:0">
+                    <label class="lp-prod-opt<?= $_ppDefault ? ' lp-prod-active' : '' ?>" data-pid="<?= $_ppVal ?>" data-price="<?= $_ppPrice ?>" data-idx="<?= $_pi ?>" onclick="lpPickProduct(this)" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid <?= $_ppDefault ? $pc : '#e5e7eb' ?>;border-radius:10px;cursor:pointer;transition:all .2s;background:<?= $_ppDefault ? $pc.'08' : '#fff' ?>">
+                        <input type="radio" name="lp_product" value="<?= $_ppVal ?>" <?= $_ppDefault ? 'checked' : '' ?> style="accent-color:<?= $pc ?>;flex-shrink:0">
                         <?php if ($_ppImg): ?><img src="<?= htmlspecialchars($_ppImg) ?>" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'"><?php endif; ?>
                         <div style="flex:1;min-width:0">
                             <div style="font-weight:600;font-size:13px;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= $_ppName ?></div>
@@ -940,8 +937,8 @@ foreach ($_lpFormFields as $_cf):
             return;
         }
         
-        // Fallback: fetch auto-upsells from API
-        if (!pid) { wrap.style.display = 'none'; return; }
+        // Fallback: fetch auto-upsells from API (only for real product IDs)
+        if (!pid || pid < 0) { wrap.style.display = 'none'; return; }
         
         fetch(SITE_URL + '/api/cart.php?action=get_upsells&product_ids=' + pid + '&limit=4')
             .then(function(r) { return r.json(); })
@@ -1016,11 +1013,17 @@ foreach ($_lpFormFields as $_cf):
         var area = form ? form.querySelector('input[name="shipping_area"]:checked') : null;
         var del = area ? (LP_DEL[area.value] || 130) : 130;
         
-        // Main product subtotal
+        // Main product subtotal - get price from selected DOM element
         var mainPrice = 0;
         if (_lpSelProduct) {
-            for (var i = 0; i < LP_P.length; i++) {
-                if (LP_P[i].real_product_id == _lpSelProduct) { mainPrice = LP_P[i].price || 0; break; }
+            var selEl = document.querySelector('#lpProdList .lp-prod-opt.lp-prod-active');
+            if (selEl) {
+                mainPrice = parseFloat(selEl.dataset.price) || 0;
+            } else {
+                // Fallback: search LP_P
+                for (var i = 0; i < LP_P.length; i++) {
+                    if (LP_P[i].real_product_id == _lpSelProduct) { mainPrice = LP_P[i].price || 0; break; }
+                }
             }
         }
         var sub = mainPrice * (_lpSelQty || 1);
@@ -1212,6 +1215,23 @@ foreach ($_lpFormFields as $_cf):
         var qty = _lpHasSelector ? _lpSelQty : (_lpSelQty || 1);
         if (_lpHasSelector && !pid) {
             if(errEl){errEl.textContent='পণ্য নির্বাচন করুন';errEl.style.display='block';}
+            return false;
+        }
+        // If pid is negative, it's an unlinked product — resolve via ensureProductId first
+        if (pid < 0) {
+            var idx = Math.abs(pid) - 1;
+            btn.disabled = true;
+            btn.textContent = 'পণ্য যাচাই হচ্ছে...';
+            ensureProductId(idx, function(realPid) {
+                if (!realPid) {
+                    if(errEl){errEl.textContent='পণ্য তৈরি ব্যর্থ, আবার চেষ্টা করুন';errEl.style.display='block';}
+                    btn.disabled = false;
+                    btn.textContent = '<?= htmlspecialchars($ofBtnText) ?>';
+                    return;
+                }
+                _lpSelProduct = realPid;
+                lpDoSubmit('lpInlineForm', realPid, qty, errEl, btn, 'lpFormSuccess', 'lpFormOrderNum', _lpUpsells);
+            });
             return false;
         }
         lpDoSubmit('lpInlineForm', pid, qty, errEl, btn, 'lpFormSuccess', 'lpFormOrderNum', _lpUpsells);
