@@ -1300,7 +1300,17 @@ function savePage() {
     fetch(API, {method:'POST',body:fd}).then(r=>r.json()).then(d => {
         if (d.success) {
             if (!PAGE_ID && d.id) window.location.href = '<?= adminUrl("pages/landing-page-builder.php") ?>?id=' + d.id + '&tab=builder';
-            else { showToast('Saved!'); if (d.slug) document.getElementById('pageSlug').value = d.slug; }
+            else {
+                showToast('Saved!');
+                if (d.slug) document.getElementById('pageSlug').value = d.slug;
+                // Reload sections to pick up auto-created product IDs
+                fetch(API + '?action=get&id=' + PAGE_ID).then(r=>r.json()).then(g => {
+                    if (g.success && g.data && g.data.sections) {
+                        sections = g.data.sections;
+                        renderSections();
+                    }
+                }).catch(function(){});
+            }
         } else if (d.slug_conflict) {
             showToast(d.error || 'Slug already exists! Choose a different slug.', 'red');
             document.getElementById('pageSlug').focus();

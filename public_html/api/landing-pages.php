@@ -214,6 +214,10 @@ switch ($action) {
             $data['created_by'] = $_SESSION['admin_id'] ?? null;
             $id = $db->insert('landing_pages', $data);
         }
+        
+        // Auto-create/sync temp products for all LP products
+        _syncLpProducts($db, $id, $data['sections']);
+        
         echo json_encode(['success'=>true, 'id'=>$id, 'slug'=>$data['slug']]);
         break;
 
@@ -221,6 +225,8 @@ switch ($action) {
     case 'delete':
         if (!$isAdmin) { echo json_encode(['error'=>'Unauthorized']); exit; }
         $id = intval($_POST['id'] ?? 0);
+        // Delete temp products created for this LP
+        $db->query("DELETE FROM products WHERE sku LIKE ?", ['LP-' . $id . '-%']);
         $db->query("DELETE FROM landing_pages WHERE id = ?", [$id]);
         $db->query("DELETE FROM landing_page_events WHERE page_id = ?", [$id]);
         $db->query("DELETE FROM landing_page_orders WHERE page_id = ?", [$id]);
@@ -632,6 +638,109 @@ function _makeSlug($text, $db, $excludeId = 0, $table = 'landing_pages') {
         $slug = $base . '-' . (++$i);
     }
     return $slug;
+}
+
+/**
+ * Sync LP products → auto-create temp products in the products table
+ * Called after every LP save. Products use SKU pattern LP-{pageId}-{hash}
+ * so they're idempotent across multiple saves.
+ */
+function _syncLpProducts($db, $pageId, $sectionsJson) {
+    try {
+        $sections = is_array($sectionsJson) ? $sectionsJson : json_decode($sectionsJson, true);
+        if (!$sections || !is_array($sections)) return;
+        
+        $updated = false;
+        $usedSkus = []; // Track which SKUs are still in use
+        
+        foreach ($sections as &$sec) {
+            if (($sec['type'] ?? '') !== 'products') continue;
+            if (!isset($sec['content']['products'])) continue;
+            
+            foreach ($sec['content']['products'] as &$p) {
+                $rpid = intval($p['real_product_id'] ?? 0);
+                $name = trim($p['name'] ?? 'LP Product');
+                $price = floatval($p['price'] ?? 0);
+                $comparePrice = floatval($p['compare_price'] ?? 0);
+                $image = trim($p['image'] ?? '');
+                $desc = trim($p['description'] ?? '');
+                
+                if ($price <= 0 && $comparePrice <= 0) continue;
+                
+                // Generate deterministic SKU for this product
+                $sku = 'LP-' . $pageId . '-' . substr(md5($name . $price), 0, 8);
+                $usedSkus[] = $sku;
+                
+                // Check if temp product already exists
+                $existing = $db->fetch("SELECT id FROM products WHERE sku = ? LIMIT 1", [$sku]);
+                
+                if ($existing) {
+                    // Update existing temp product
+                    $imgBase = $image ? basename(parse_url($image, PHP_URL_PATH)) : '';
+                    $db->query("UPDATE products SET name = ?, name_bn = ?, regular_price = ?, sale_price = ?, 
+                        featured_image = CASE WHEN ? != '' THEN ? ELSE featured_image END,
+                        description = ?, updated_at = NOW() WHERE id = ?", [
+                        $name, $name,
+                        $comparePrice > 0 ? $comparePrice : $price,
+                        $comparePrice > 0 ? $price : null,
+                        $imgBase, $imgBase,
+                        $desc, $existing['id']
+                    ]);
+                    
+                    // Link product if not yet linked
+                    if ($rpid !== intval($existing['id'])) {
+                        $p['real_product_id'] = intval($existing['id']);
+                        $updated = true;
+                    }
+                } else {
+                    // Create new temp product
+                    $slug = 'lp-' . $pageId . '-' . preg_replace('/[^a-z0-9]+/', '-', strtolower(substr($name, 0, 40))) . '-' . substr(uniqid(), -5);
+                    $imgBase = $image ? basename(parse_url($image, PHP_URL_PATH)) : '';
+                    
+                    $newId = $db->insert('products', [
+                        'name' => $name,
+                        'name_bn' => $name,
+                        'slug' => $slug,
+                        'sku' => $sku,
+                        'description' => $desc,
+                        'regular_price' => $comparePrice > 0 ? $comparePrice : $price,
+                        'sale_price' => $comparePrice > 0 ? $price : null,
+                        'is_on_sale' => $comparePrice > 0 ? 1 : 0,
+                        'is_active' => 0, // Hidden from main site catalog
+                        'is_featured' => 0,
+                        'stock_status' => 'in_stock',
+                        'featured_image' => $imgBase,
+                        'tags' => 'landing-page,lp-' . $pageId,
+                        'created_at' => date('Y-m-d H:i:s'),
+                        'updated_at' => date('Y-m-d H:i:s'),
+                    ]);
+                    
+                    if ($newId) {
+                        $p['real_product_id'] = intval($newId);
+                        $updated = true;
+                    }
+                }
+            }
+            unset($p);
+        }
+        unset($sec);
+        
+        // Clean up orphaned temp products (removed from LP but still in DB)
+        $likePattern = 'LP-' . $pageId . '-%';
+        $orphans = $db->fetchAll("SELECT id, sku FROM products WHERE sku LIKE ? AND is_active = 0", [$likePattern]);
+        foreach ($orphans as $orph) {
+            if (!in_array($orph['sku'], $usedSkus)) {
+                $db->query("DELETE FROM products WHERE id = ?", [$orph['id']]);
+            }
+        }
+        
+        // Save updated sections with real_product_ids back to LP
+        if ($updated) {
+            $db->query("UPDATE landing_pages SET sections = ? WHERE id = ?", [json_encode($sections, JSON_UNESCAPED_UNICODE), $pageId]);
+        }
+    } catch (\Throwable $e) {
+        error_log("LP product sync error (page {$pageId}): " . $e->getMessage());
+    }
 }
 
 function _formatPhone($phone) {
