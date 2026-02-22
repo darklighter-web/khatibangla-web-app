@@ -141,6 +141,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         echo json_encode(['success' => true, 'products' => $upsellProducts]);
         exit;
     }
+
+    // Get specific products by IDs (for LP custom upsells)
+    if ($action === 'get_products_by_ids') {
+        $ids = array_filter(array_map('intval', explode(',', $_GET['ids'] ?? '')));
+        $products = [];
+        if (!empty($ids)) {
+            $db = Database::getInstance();
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            try {
+                $rows = $db->fetchAll(
+                    "SELECT id, name, name_bn, featured_image, regular_price, sale_price, is_on_sale
+                     FROM products WHERE id IN ($ph) AND is_active = 1
+                     ORDER BY FIELD(id, $ph)",
+                    array_merge($ids, $ids)
+                );
+                foreach ($rows as $r) {
+                    $price = ($r['is_on_sale'] && $r['sale_price'] > 0 && $r['sale_price'] < $r['regular_price'])
+                        ? floatval($r['sale_price']) : floatval($r['regular_price']);
+                    $products[] = [
+                        'id' => intval($r['id']),
+                        'name' => $r['name_bn'] ?: $r['name'],
+                        'name_bn' => $r['name_bn'] ?? '',
+                        'price' => $price,
+                        'regular_price' => floatval($r['regular_price']),
+                        'sale_price' => floatval($r['sale_price'] ?? 0),
+                        'image' => $r['featured_image'] ? imgSrc('products', $r['featured_image']) : '',
+                    ];
+                }
+            } catch (\Throwable $e) {}
+        }
+        echo json_encode(['success' => true, 'products' => $products]);
+        exit;
+    }
 }
 
 // POST request
