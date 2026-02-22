@@ -11,8 +11,15 @@ $maintMsg   = getSetting('maintenance_message', '');
 $maintEta   = getSetting('maintenance_eta', '');
 $maintTitle = getSetting('maintenance_title', '');
 $gameType   = getSetting('maintenance_game', 'space');
-if ($siteLogo && !str_starts_with($siteLogo, 'http'))
-    $siteLogo = rtrim(SITE_URL, '/') . '/' . ltrim($siteLogo, '/');
+// Build logo URL same way as main header.php
+$siteLogoUrl = '';
+if ($siteLogo) {
+    if (str_starts_with($siteLogo, 'http')) {
+        $siteLogoUrl = $siteLogo;
+    } else {
+        $siteLogoUrl = uploadUrl($siteLogo);
+    }
+}
 http_response_code(503);
 header('Retry-After: 3600');
 $isDark = ($gameType === 'space');
@@ -191,7 +198,7 @@ body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;min-height:100%;m
 
 <div class="wrap">
     <div class="logo-area">
-        <?php if ($siteLogo): ?><img src="<?= htmlspecialchars($siteLogo) ?>" alt="<?= htmlspecialchars($siteName) ?>"><?php endif; ?>
+        <?php if ($siteLogoUrl): ?><img src="<?= htmlspecialchars($siteLogoUrl) ?>" alt="<?= htmlspecialchars($siteName) ?>"><?php endif; ?>
         <div class="site-name"><?= htmlspecialchars($siteName) ?></div>
     </div>
     <div class="badge"><?= $isDark ? '🔧' : '🍌' ?> <?= htmlspecialchars($maintTitle ?: 'রক্ষণাবেক্ষণ চলছে') ?></div>
