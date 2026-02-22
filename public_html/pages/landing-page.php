@@ -816,14 +816,15 @@ foreach ($_lpFormFields as $_cf):
         } elseif (count($allProducts) > 1) {
             // Auto-suggest: use other LP products as upsells
             $_autoUp = [];
-            foreach ($allProducts as $_ap) {
+            foreach ($allProducts as $_apIdx => $_ap) {
                 $_apId = intval($_ap['real_product_id'] ?? 0);
-                if ($_apId <= 0) continue;
+                // Use real_product_id if available, otherwise negative index (same as product selector)
                 $_autoUp[] = [
-                    'id' => $_apId,
+                    'id' => $_apId > 0 ? $_apId : -($_apIdx + 1),
                     'name' => $_ap['name'] ?? '',
                     'image' => $_ap['image'] ?? '',
                     'price' => floatval($_ap['price'] ?? 0),
+                    'idx' => $_apIdx,
                 ];
             }
             echo json_encode($_autoUp, JSON_UNESCAPED_UNICODE);
@@ -1200,25 +1201,41 @@ foreach ($_lpFormFields as $_cf):
             }).then(function(r){return r.json()});
         }
 
-        // Step 1: Add main product (clear cart first)
-        var chain = pid ? cartAdd(pid, qty, true) : Promise.resolve({success:true});
-        
-        // Step 2: Add each upsell product
-        var ups = upsells || [];
-        ups.forEach(function(u) {
-            chain = chain.then(function() {
-                return cartAdd(u.pid, u.qty || 1, false);
-            });
-        });
-
-        // Step 3: Submit order
-        chain.then(function(){
+        function doSubmitAfterCart() {
             var formEl = document.getElementById(formId);
             var formData = new FormData(formEl);
             return fetch(SITE_URL+'/api/order.php',{
                 method:'POST',
                 body: formData
             });
+        }
+
+        // Resolve negative upsell pids, then add to cart, then submit
+        var ups = (upsells || []).slice();
+        var resolveChain = Promise.resolve();
+        ups.forEach(function(u, i) {
+            if (u.pid < 0) {
+                var idx = Math.abs(u.pid) - 1;
+                resolveChain = resolveChain.then(function() {
+                    return new Promise(function(resolve) {
+                        ensureProductId(idx, function(realPid) {
+                            if (realPid) ups[i].pid = realPid;
+                            resolve();
+                        });
+                    });
+                });
+            }
+        });
+
+        resolveChain.then(function() {
+            ups = ups.filter(function(u) { return u.pid > 0; });
+            var chain = pid ? cartAdd(pid, qty, true) : Promise.resolve({success:true});
+            ups.forEach(function(u) {
+                chain = chain.then(function() { return cartAdd(u.pid, u.qty || 1, false); });
+            });
+            return chain;
+        }).then(function() {
+            return doSubmitAfterCart();
         }).then(function(r){return r.text()}).then(function(text){
             var d;
             try { d = JSON.parse(text); } catch(e) {
