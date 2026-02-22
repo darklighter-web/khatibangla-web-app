@@ -98,6 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'checkout' => ['checkout_note_enabled'],
         'email' => ['smtp_enabled'],
         'language' => ['show_lang_toggle'],
+        'social' => ['fab_enabled','fab_call_enabled','fab_chat_enabled','fab_whatsapp_enabled','fab_messenger_enabled'],
     ];
     if (isset($checkboxMap[$section])) {
         foreach ($checkboxMap[$section] as $cb) {
@@ -1121,6 +1122,92 @@ require_once __DIR__ . '/../includes/header.php';
                     <div><label class="block text-xs font-medium text-gray-500 mb-0.5"><?= $label ?></label>
                         <input type="text" name="<?= $key ?>" value="<?= e($s[$key] ?? '') ?>" class="w-full px-3 py-2 border rounded-lg text-sm"></div>
                     <?php endforeach; ?>
+                </div>
+            </div>
+
+            <!-- Floating Contact Button -->
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h4 class="font-semibold text-gray-800"><i class="fas fa-headset mr-2 text-blue-500"></i>Floating Contact Button</h4>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" name="fab_enabled" value="1" class="sr-only peer" <?= ($s['fab_enabled'] ?? '0') === '1' ? 'checked' : '' ?> onchange="document.getElementById('fabOptions').classList.toggle('hidden',!this.checked)">
+                        <div class="w-9 h-5 bg-gray-200 peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                </div>
+                <p class="text-xs text-gray-500">Replaces the default chat bubble with a unified contact menu. Customers tap once to expand all your contact options.</p>
+
+                <div id="fabOptions" class="space-y-3 <?= ($s['fab_enabled'] ?? '0') !== '1' ? 'hidden' : '' ?>">
+                    <div class="grid md:grid-cols-2 gap-3">
+                        <div><label class="block text-xs font-medium text-gray-500 mb-0.5">Button Color</label>
+                            <input type="color" name="fab_color" value="<?= e($s['fab_color'] ?? '#3b82f6') ?>" class="h-9 w-full rounded-lg border cursor-pointer"></div>
+                        <div><label class="block text-xs font-medium text-gray-500 mb-0.5">Position</label>
+                            <select name="fab_position" class="w-full px-3 py-2 border rounded-lg text-sm">
+                                <option value="right" <?= ($s['fab_position'] ?? 'right') === 'right' ? 'selected' : '' ?>>Bottom Right</option>
+                                <option value="left" <?= ($s['fab_position'] ?? '') === 'left' ? 'selected' : '' ?>>Bottom Left</option>
+                            </select></div>
+                    </div>
+
+                    <!-- Call -->
+                    <div class="flex items-center gap-3 p-3 rounded-lg border bg-gray-50">
+                        <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                            <input type="checkbox" name="fab_call_enabled" value="1" class="sr-only peer" <?= ($s['fab_call_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
+                            <div class="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                        </label>
+                        <i class="fas fa-phone-alt text-green-500 w-5 text-center"></i>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-gray-700">Call</div>
+                            <div class="text-[10px] text-gray-400">Uses Contact Phone from above</div>
+                        </div>
+                        <div class="text-xs text-gray-400 truncate max-w-[120px]"><?= e($s['contact_phone'] ?? 'Not set') ?></div>
+                    </div>
+
+                    <!-- Chat -->
+                    <div class="flex items-center gap-3 p-3 rounded-lg border bg-gray-50">
+                        <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                            <input type="checkbox" name="fab_chat_enabled" value="1" class="sr-only peer" <?= ($s['fab_chat_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
+                            <div class="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                        </label>
+                        <i class="fas fa-comments text-blue-500 w-5 text-center"></i>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-gray-700">Live Chat</div>
+                            <div class="text-[10px] text-gray-400">Opens your site's built-in chat widget</div>
+                        </div>
+                        <div class="text-xs <?= ($s['chat_enabled'] ?? '0') === '1' ? 'text-green-500' : 'text-red-400' ?>"><?= ($s['chat_enabled'] ?? '0') === '1' ? 'Chat ON' : 'Chat OFF' ?></div>
+                    </div>
+
+                    <!-- WhatsApp -->
+                    <div class="flex items-center gap-3 p-3 rounded-lg border bg-gray-50">
+                        <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                            <input type="checkbox" name="fab_whatsapp_enabled" value="1" class="sr-only peer" <?= ($s['fab_whatsapp_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
+                            <div class="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                        </label>
+                        <i class="fab fa-whatsapp text-green-500 w-5 text-center text-lg"></i>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-gray-700">WhatsApp</div>
+                            <div class="text-[10px] text-gray-400">Uses WhatsApp number from above</div>
+                        </div>
+                        <div class="text-xs text-gray-400 truncate max-w-[120px]"><?= e($s['whatsapp_number'] ?? 'Not set') ?></div>
+                    </div>
+
+                    <!-- Messenger -->
+                    <div class="flex items-center gap-3 p-3 rounded-lg border bg-gray-50">
+                        <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                            <input type="checkbox" name="fab_messenger_enabled" value="1" class="sr-only peer" <?= ($s['fab_messenger_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
+                            <div class="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                        <i class="fab fa-facebook-messenger text-blue-600 w-5 text-center text-lg"></i>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-gray-700">Messenger</div>
+                            <div class="text-[10px] text-gray-400">Enter Facebook Page username or ID</div>
+                        </div>
+                    </div>
+                    <div class="pl-12">
+                        <input type="text" name="fab_messenger_id" value="<?= e($s['fab_messenger_id'] ?? '') ?>" placeholder="Page username or numeric ID" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    </div>
+
+                    <div class="p-3 rounded-lg bg-blue-50 border border-blue-100">
+                        <p class="text-xs text-blue-600"><i class="fas fa-info-circle mr-1"></i> This replaces the standalone chat bubble with a single unified button. When only one option is enabled, it opens directly. With multiple options, it expands into a menu.</p>
+                    </div>
                 </div>
             </div>
 

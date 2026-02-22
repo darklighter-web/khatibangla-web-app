@@ -276,6 +276,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <input type="text" id="ip-reason" placeholder="Reason" class="px-3 py-2 border rounded-lg text-sm w-48">
                     <select id="ip-duration" class="px-3 py-2 border rounded-lg text-sm"><option value="">Permanent</option><option value="1">1 Hour</option><option value="24">24 Hours</option><option value="168">7 Days</option><option value="720">30 Days</option></select>
                     <button onclick="addIpRule()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Add Rule</button>
+                    <button onclick="clearAutoBlocks()" class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600" title="Remove all auto-blocked IPs (from rate limits, scanners). Manual blocks are preserved."><i class="fas fa-unlock mr-1"></i>Clear Auto-Blocks</button>
                 </div>
             </div>
             <div class="overflow-x-auto">
@@ -458,9 +459,10 @@ function loadIpRules() {
         document.getElementById('ip-rules-body').innerHTML = rules.length ? rules.map(r => {
             const typeColor = r.rule_type === 'block' ? 'red' : r.rule_type === 'allow' ? 'green' : 'yellow';
             const typeIcon = r.rule_type === 'block' ? '🚫' : r.rule_type === 'allow' ? '✅' : '👁️';
+            const autoTag = (r.auto_blocked == 1) ? ' <span class="text-[9px] bg-orange-100 text-orange-600 px-1 rounded">auto</span>' : '';
             return `<tr class="hover:bg-gray-50">
                 <td class="px-4 py-2 font-mono text-xs font-bold">${r.ip_address}</td>
-                <td class="px-4 py-2"><span class="text-xs bg-${typeColor}-100 text-${typeColor}-600 px-2 py-0.5 rounded font-medium">${typeIcon} ${r.rule_type}</span></td>
+                <td class="px-4 py-2"><span class="text-xs bg-${typeColor}-100 text-${typeColor}-600 px-2 py-0.5 rounded font-medium">${typeIcon} ${r.rule_type}</span>${autoTag}</td>
                 <td class="px-4 py-2 text-xs text-gray-600">${r.reason || '—'}</td>
                 <td class="px-4 py-2 text-xs text-gray-600">${r.hit_count}</td>
                 <td class="px-4 py-2 text-xs text-gray-500">${r.expires_at || 'Permanent'}</td>
@@ -488,6 +490,12 @@ function removeIpRule(id) {
     if (!confirm('Remove this IP rule?')) return;
     const fd = new FormData(); fd.append('action','remove_ip_rule'); fd.append('id',id);
     fetch(API,{method:'POST',body:fd}).then(r=>r.json()).then(()=>loadIpRules());
+}
+
+function clearAutoBlocks() {
+    if (!confirm('Clear all auto-blocked IPs?\n\nThis removes IPs blocked by rate limits and scanner detection.\nManual blocks are preserved.\n\nThis will fix "Access Denied" for iOS Safari and other devices.')) return;
+    const fd = new FormData(); fd.append('action','clear_auto_blocks');
+    fetch(API,{method:'POST',body:fd}).then(r=>r.json()).then(d => { alert(d.message); loadIpRules(); loadDashboard(); });
 }
 
 function blockIpFromLog(ip) {

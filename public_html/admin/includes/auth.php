@@ -92,6 +92,7 @@ function getPagePermission($page) {
         // Content
         'page-builder' => 'cms_pages', 'shop-design' => 'settings',
         'checkout-fields' => 'settings', 'banners' => 'banners', 'cms-pages' => 'cms_pages',
+        'landing-pages' => 'cms_pages', 'landing-page-builder' => 'cms_pages',
         
         // Support
         'live-chat' => 'orders', 'chat-settings' => 'settings',
