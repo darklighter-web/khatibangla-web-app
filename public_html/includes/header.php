@@ -97,14 +97,18 @@ require_once __DIR__ . '/seo.php';
 $seo = $seo ?? ['type' => 'website'];
 $seo['title'] = $seo['title'] ?? $metaTitle;
 $seo['description'] = $seo['description'] ?? $metaDesc;
+
+// Auto-generate better title/desc if manual ones are empty or generic
+$_autoTitle = seoAutoTitle($seo);
+$_autoDesc = seoAutoDescription($seo);
 ?>
 <!DOCTYPE html>
 <html lang="<?= $currentLang ?>" dir="ltr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($metaTitle) ?></title>
-    <meta name="description" content="<?= htmlspecialchars($metaDesc) ?>">
+    <title><?= htmlspecialchars($_autoTitle) ?></title>
+    <meta name="description" content="<?= htmlspecialchars($_autoDesc) ?>">
 <?= seoRenderHead($seo) ?>
 <?= seoRenderJsonLd($seo) ?>
     

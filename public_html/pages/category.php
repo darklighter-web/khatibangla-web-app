@@ -52,26 +52,29 @@ $_catDesc = '';
 $_catImg = '';
 $_crumbs = [['name' => 'হোম', 'url' => SITE_URL]];
 if ($category) {
-    $_catDesc = $category['meta_description'] ?? $category['description'] ?? '';
+    $_catDesc = $category['meta_description'] ?? '';
+    $_catOrigDesc = $category['description'] ?? '';
     if (!empty($category['image'])) {
         $_catImg = $category['image'];
         if (!str_starts_with($_catImg, 'http')) $_catImg = SITE_URL . '/uploads/categories/' . basename($_catImg);
     }
     $_crumbs[] = ['name' => $category['name']];
-    $pageDescription = $_catDesc ?: ($category['name'] . ' - ' . getSetting('site_name', 'KhatiBangla'));
+    // Only set pageDescription if admin explicitly wrote one; otherwise auto-SEO handles it
+    $pageDescription = $_catDesc ?: null;
 } elseif ($search) {
     $_crumbs[] = ['name' => 'Search: ' . $search];
-    $pageDescription = 'Search results for ' . $search;
 } else {
     $_crumbs[] = ['name' => 'All Products'];
-    $pageDescription = 'Browse all products at ' . getSetting('site_name', 'KhatiBangla');
 }
 $seo = [
-    'type' => 'website',
+    'type' => $category ? 'category' : ($search ? 'website' : 'shop'),
     'title' => $pageTitle,
     'description' => $pageDescription ?? '',
     'image' => $_catImg,
-    'noindex' => !empty($search), // noindex search results
+    'category_name' => $category['name'] ?? '',
+    'category_description' => $_catOrigDesc ?? '',
+    'category_image' => $_catImg,
+    'noindex' => !empty($search),
     'breadcrumbs' => $_crumbs,
 ];
 

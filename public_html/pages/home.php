@@ -2,14 +2,14 @@
 /**
  * Homepage — reads Page Builder settings for sections
  */
-$pageTitle = getSetting('meta_title', getSetting('site_name'));
-$pageDescription = getSetting('meta_description');
+$pageTitle = getSetting('meta_title', '') ?: null;
+$pageDescription = getSetting('meta_description', '') ?: null;
 
-// SEO: Home page gets Organization + WebSite schema
+// SEO: Home page gets Organization + WebSite schema, auto-generates title/desc
 $seo = [
     'type' => 'home',
-    'title' => $pageTitle,
-    'description' => $pageDescription,
+    'title' => $pageTitle ?? '',
+    'description' => $pageDescription ?? '',
 ];
 
 include ROOT_PATH . 'includes/header.php';

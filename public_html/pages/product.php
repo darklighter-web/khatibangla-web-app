@@ -35,10 +35,11 @@ $price = getProductPrice($product);
 $discount = getDiscountPercent($product);
 $isOnSale = $product['sale_price'] && $product['sale_price'] > 0 && $product['sale_price'] < $product['regular_price'];
 
-$pageTitle = $product['meta_title'] ?: $product['name'] . ' | ' . getSetting('site_name');
-$pageDescription = $product['meta_description'] ?: ($product['short_description'] ?: substr(strip_tags($product['description']), 0, 160));
+// Only use admin-entered meta values as overrides; auto-SEO generates from product data otherwise
+$pageTitle = $product['meta_title'] ?: null;
+$pageDescription = $product['meta_description'] ?: null;
 
-// SEO: Product structured data + OG tags
+// SEO: Product structured data + OG tags + auto-generated title/desc
 $_prodImg = '';
 if (!empty($product['featured_image'])) {
     $_prodImg = $product['featured_image'];
@@ -46,8 +47,8 @@ if (!empty($product['featured_image'])) {
 }
 $seo = [
     'type' => 'product',
-    'title' => $pageTitle,
-    'description' => $pageDescription,
+    'title' => $pageTitle ?? '',
+    'description' => $pageDescription ?? '',
     'image' => $_prodImg,
     'price' => $price,
     'currency' => 'BDT',
