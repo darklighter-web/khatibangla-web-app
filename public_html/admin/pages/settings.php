@@ -1554,10 +1554,11 @@ require_once __DIR__ . '/../includes/header.php';
 
             <?php elseif ($tab === 'advanced'): ?>
             <!-- Maintenance Mode -->
-            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-5">
                 <h4 class="font-semibold text-gray-800"><i class="fas fa-hard-hat mr-2 text-amber-500"></i>Maintenance Mode</h4>
-                <p class="text-xs text-gray-500">When enabled, visitors see a "maintenance" page with a mini-game. Admins can still access the site normally.</p>
+                <p class="text-xs text-gray-500">ভিজিটররা মিনি-গেমসহ একটি মেইনটেন্যান্স পেজ দেখবে। অ্যাডমিনরা স্বাভাবিকভাবে সাইট দেখতে পারবেন।</p>
                 
+                <!-- Toggle -->
                 <div class="flex items-center gap-3 p-3 rounded-lg <?= ($s['maintenance_mode'] ?? '0') === '1' ? 'bg-amber-50 border border-amber-300' : 'bg-gray-50 border border-gray-200' ?>">
                     <label class="flex items-center gap-2 cursor-pointer">
                         <input type="hidden" name="maintenance_mode" value="0">
@@ -1567,36 +1568,128 @@ require_once __DIR__ . '/../includes/header.php';
                         </span>
                     </label>
                 </div>
-
-                <div class="grid md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">কাস্টম মেসেজ (ঐচ্ছিক)</label>
-                        <textarea name="maintenance_message" rows="2" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="খালি রাখলে ডিফল্ট বার্তা দেখাবে"><?= e($s['maintenance_message'] ?? '') ?></textarea>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">আনুমানিক সময় (ঐচ্ছিক)</label>
-                        <input type="text" name="maintenance_eta" value="<?= e($s['maintenance_eta'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="যেমন: ৩০ মিনিট, ২ ঘন্টা">
-                    </div>
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">বাইপাস কী (ঐচ্ছিক)</label>
-                    <div class="flex gap-2">
-                        <input type="text" name="maintenance_bypass_key" value="<?= e($s['maintenance_bypass_key'] ?? '') ?>" class="flex-1 px-3 py-2.5 border rounded-lg text-sm font-mono" placeholder="একটি সিক্রেট কী" id="bypassKeyInput">
-                        <button type="button" onclick="document.getElementById('bypassKeyInput').value=Math.random().toString(36).substr(2,10)" class="px-3 py-2 bg-gray-100 border rounded-lg text-xs font-medium hover:bg-gray-200 whitespace-nowrap">🔑 Generate</button>
-                    </div>
-                    <p class="text-xs text-gray-400 mt-1">সেট করলে <code class="bg-gray-100 px-1 rounded">?bypass=KEY</code> দিয়ে ভিজিটররাও সাইট দেখতে পারবে</p>
-                </div>
                 
                 <?php if (($s['maintenance_mode'] ?? '0') === '1'): ?>
                 <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                    <p class="text-xs text-amber-700"><strong>⚠️ সাইটটি এখন মেইনটেন্যান্স মোডে আছে।</strong> ভিজিটররা একটি গেম পেজ দেখছে। আপনি অ্যাডমিন হিসেবে সাইটটি স্বাভাবিকভাবে দেখতে পারবেন।</p>
+                    <p class="text-xs text-amber-700"><strong>⚠️ সাইটটি এখন মেইনটেন্যান্স মোডে আছে।</strong> ভিজিটররা গেম পেজ দেখছে।</p>
                     <?php if (!empty($s['maintenance_bypass_key'])): ?>
-                    <p class="text-xs text-amber-600 mt-1">শেয়ার করুন: <code class="bg-white px-1 py-0.5 rounded text-xs"><?= SITE_URL ?>?bypass=<?= e($s['maintenance_bypass_key']) ?></code></p>
+                    <p class="text-xs text-amber-600 mt-1">শেয়ার লিংক: <code class="bg-white px-1 py-0.5 rounded text-xs select-all"><?= SITE_URL ?>?bypass=<?= e($s['maintenance_bypass_key']) ?></code></p>
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
+
+                <!-- Game Selector -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">🎮 গেম সিলেক্ট করুন</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="relative cursor-pointer">
+                            <input type="radio" name="maintenance_game" value="space" <?= ($s['maintenance_game'] ?? 'space') === 'space' ? 'checked' : '' ?> class="peer sr-only" onchange="updateMaintPreview()">
+                            <div class="p-4 rounded-xl border-2 transition-all peer-checked:border-indigo-500 peer-checked:bg-indigo-50 border-gray-200 hover:border-gray-300 text-center">
+                                <div class="text-3xl mb-1">🚀</div>
+                                <div class="text-sm font-bold text-gray-800">স্পেস রানার</div>
+                                <div class="text-[10px] text-gray-500 mt-1">ডার্ক থিম • মহাকাশ</div>
+                            </div>
+                        </label>
+                        <label class="relative cursor-pointer">
+                            <input type="radio" name="maintenance_game" value="monkey" <?= ($s['maintenance_game'] ?? 'space') === 'monkey' ? 'checked' : '' ?> class="peer sr-only" onchange="updateMaintPreview()">
+                            <div class="p-4 rounded-xl border-2 transition-all peer-checked:border-amber-500 peer-checked:bg-amber-50 border-gray-200 hover:border-gray-300 text-center">
+                                <div class="text-3xl mb-1">🐒</div>
+                                <div class="text-sm font-bold text-gray-800">বানানা জাম্প</div>
+                                <div class="text-[10px] text-gray-500 mt-1">লাইট থিম • জঙ্গল</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Text Editor -->
+                <div class="border-t pt-4 space-y-3">
+                    <h5 class="text-sm font-semibold text-gray-700"><i class="fas fa-pen-fancy mr-1 text-gray-400"></i>টেক্সট কাস্টমাইজ</h5>
+                    <div class="grid md:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">শিরোনাম (ব্যাজ টেক্সট)</label>
+                            <input type="text" name="maintenance_title" value="<?= e($s['maintenance_title'] ?? '') ?>" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="রক্ষণাবেক্ষণ চলছে" oninput="updateMaintPreview()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">আনুমানিক সময়</label>
+                            <input type="text" name="maintenance_eta" value="<?= e($s['maintenance_eta'] ?? '') ?>" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="যেমন: ৩০ মিনিট" oninput="updateMaintPreview()">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">মূল বার্তা</label>
+                        <textarea name="maintenance_message" rows="2" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="আমাদের সাইটটি আপডেট হচ্ছে। কিছুক্ষণের মধ্যেই ফিরে আসবে।" oninput="updateMaintPreview()"><?= e($s['maintenance_message'] ?? '') ?></textarea>
+                    </div>
+                </div>
+
+                <!-- Live Preview -->
+                <div class="border-t pt-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h5 class="text-sm font-semibold text-gray-700"><i class="fas fa-eye mr-1 text-gray-400"></i>প্রিভিউ</h5>
+                        <a href="<?= SITE_URL ?>/maintenance-preview" target="_blank" class="text-xs text-blue-600 hover:underline"><i class="fas fa-external-link-alt mr-1"></i>ফুল প্রিভিউ</a>
+                    </div>
+                    <div id="maintPreview" class="rounded-xl overflow-hidden border" style="height:240px">
+                        <div id="mpInner" style="transform:scale(0.5);transform-origin:top left;width:200%;height:200%">
+                            <!-- Filled by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bypass Key -->
+                <div class="border-t pt-4">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">🔑 বাইপাস কী (ঐচ্ছিক)</label>
+                    <div class="flex gap-2">
+                        <input type="text" name="maintenance_bypass_key" value="<?= e($s['maintenance_bypass_key'] ?? '') ?>" class="flex-1 px-3 py-2 border rounded-lg text-sm font-mono" placeholder="সিক্রেট কী" id="bypassKeyInput">
+                        <button type="button" onclick="document.getElementById('bypassKeyInput').value=Math.random().toString(36).substr(2,10)" class="px-3 py-2 bg-gray-100 border rounded-lg text-xs font-medium hover:bg-gray-200 whitespace-nowrap">Generate</button>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1"><code class="bg-gray-100 px-1 rounded">?bypass=KEY</code> দিয়ে নির্দিষ্ট ব্যক্তিরা সাইট দেখতে পারবে</p>
+                </div>
             </div>
+
+            <script>
+            function updateMaintPreview(){
+                const game = document.querySelector('[name="maintenance_game"]:checked')?.value || 'space';
+                const title = document.querySelector('[name="maintenance_title"]')?.value || 'রক্ষণাবেক্ষণ চলছে';
+                const msg = document.querySelector('[name="maintenance_message"]')?.value || 'আমাদের সাইটটি আপডেট হচ্ছে। ততক্ষণ গেমটি উপভোগ করুন! 🎮';
+                const eta = document.querySelector('[name="maintenance_eta"]')?.value || '';
+                const isDark = game === 'space';
+                const icon = isDark ? '🚀' : '🐒';
+                const gameName = isDark ? 'স্পেস রানার' : 'বানানা জাম্প';
+                const bg = isDark ? '#0b0f1a' : '#fef9ef';
+                const txt = isDark ? '#e2e8f0' : '#3d2c1e';
+                const sub = isDark ? '#94a3b8' : '#78716c';
+                const badgeBg = isDark ? 'rgba(239,68,68,.15)' : 'rgba(245,158,11,.12)';
+                const badgeBorder = isDark ? 'rgba(239,68,68,.3)' : 'rgba(245,158,11,.3)';
+                const badgeColor = isDark ? '#fca5a5' : '#b45309';
+                const boxBg = isDark ? 'rgba(255,255,255,.04)' : '#fff';
+                const boxBorder = isDark ? 'rgba(255,255,255,.06)' : '#e7e5e4';
+                const canvasBg = isDark ? '#080c16' : '#f0fdf4';
+
+                document.getElementById('mpInner').innerHTML = `
+                <div style="background:${bg};min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;font-family:Segoe UI,system-ui,sans-serif">
+                    <div style="font-size:36px;font-weight:900;color:${txt};margin-bottom:8px"><?= htmlspecialchars($siteName) ?></div>
+                    <div style="display:inline-block;padding:6px 18px;border-radius:20px;font-size:15px;font-weight:600;margin-bottom:16px;background:${badgeBg};border:1px solid ${badgeBorder};color:${badgeColor}">
+                        ${isDark?'🔧':'🍌'} ${title}
+                    </div>
+                    <p style="font-size:17px;color:${sub};line-height:1.7;text-align:center;max-width:500px;margin-bottom:16px">${msg.replace(/\\n/g,'<br>')}</p>
+                    ${eta ? '<div style="font-size:14px;color:'+sub+';margin-bottom:12px">🕐 আনুমানিক সময়: '+eta+'</div>' : ''}
+                    <div style="background:${boxBg};border:1px solid ${boxBorder};border-radius:18px;padding:16px;width:100%;max-width:500px">
+                        <div style="display:flex;justify-content:space-between;font-size:15px;color:${sub};margin-bottom:10px">
+                            <span>${icon} স্কোর: <b style="color:${txt}">0</b></span>
+                            <span>⚡ গতি: <b style="color:${txt}">1</b>x</span>
+                            <span>🏆 সেরা: <b style="color:${txt}">0</b></span>
+                        </div>
+                        <div style="background:${canvasBg};border-radius:12px;height:120px;display:flex;align-items:center;justify-content:center;position:relative">
+                            <div style="text-align:center">
+                                <div style="font-size:60px;animation:none">${icon}</div>
+                                <div style="font-size:17px;font-weight:700;color:${txt}">${gameName}</div>
+                                <div style="font-size:13px;color:${sub};margin-top:4px">SPACE / TAP</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="font-size:13px;color:${isDark?'#334155':'#d6d3d1'};margin-top:20px">শীঘ্রই ফিরে আসছি ❤️</div>
+                </div>`;
+            }
+            document.addEventListener('DOMContentLoaded', updateMaintPreview);
+            </script>
 
             <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
                 <h4 class="font-semibold text-gray-800"><i class="fas fa-tools mr-2 text-gray-500"></i>Advanced Settings</h4>

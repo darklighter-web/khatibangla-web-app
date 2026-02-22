@@ -140,6 +140,16 @@ switch ($page) {
     case 'robots.txt':
         include __DIR__ . '/pages/robots.php';
         break;
+
+    case 'maintenance-preview':
+        // Admin-only preview of maintenance page
+        if (!empty($_SESSION['admin_id'])) {
+            include __DIR__ . '/maintenance.php';
+        } else {
+            http_response_code(404);
+            include __DIR__ . '/pages/404.php';
+        }
+        break;
         
     default:
         // Try product slug first
