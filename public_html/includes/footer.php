@@ -1,6 +1,15 @@
 <?php
 $footerBg = getSetting('footer_bg_color', '#1A202C');
 $footerText = getSetting('footer_text_color', '#E2E8F0');
+// Defensive: these are normally set by header.php but may be missing on landing pages
+if (!isset($siteName)) $siteName = getSetting('site_name', 'MyShop');
+if (!isset($siteLogo)) $siteLogo = getSetting('site_logo', '');
+if (!isset($sitePhone)) $sitePhone = getSetting('site_phone') ?: getSetting('header_phone', '');
+if (!isset($siteHotline)) $siteHotline = getSetting('hotline_number') ?: getSetting('site_hotline', '');
+if (!isset($siteWhatsapp)) $siteWhatsapp = getSetting('site_whatsapp', '');
+if (!isset($categories)) $categories = function_exists('getCategories') ? getCategories() : [];
+if (!isset($primaryColor)) $primaryColor = getSetting('primary_color', '#E53E3E');
+if (!isset($cartCount)) $cartCount = 0;
 $footerAbout = getSetting('footer_about');
 $copyright = getSetting('footer_copyright');
 $fbUrl = getSetting('social_facebook');
@@ -1919,19 +1928,6 @@ if ($_chatEnabled === '1'):
 .chat-pcard-order:hover{opacity:.85}
 </style>
 
-<!-- Chat Bubble -->
-<div id="chatBubble" onclick="toggleChatWidget()" class="fixed z-[60] cursor-pointer shadow-lg hover:shadow-xl transition-all hover:scale-105" style="<?= $_bubblePos ?>;<?= $_isBottom ? 'bottom:80px' : '' ?>">
-    <div class="w-14 h-14 rounded-full flex items-center justify-center relative" style="background:<?= e($_chatColor) ?>">
-        <svg id="chatBubbleIcon" class="w-6 h-6 text-white transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-        </svg>
-        <svg id="chatBubbleClose" class="w-6 h-6 text-white hidden transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-        </svg>
-        <span id="chatUnreadBadge" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center animate-pulse">0</span>
-    </div>
-</div>
-
 <!-- Chat Window -->
 <div id="chatWindow" class="fixed z-[60] hidden" style="<?= $_winPos ?>">
     <div class="bg-white rounded-2xl shadow-2xl border w-[360px] max-w-[calc(100vw-30px)] flex flex-col overflow-hidden" style="height:500px;max-height:calc(100vh-120px)">
@@ -2000,18 +1996,15 @@ if ($_chatEnabled === '1'):
 
     window.toggleChatWidget = function() {
         const win = document.getElementById('chatWindow');
-        const iconOpen = document.getElementById('chatBubbleIcon');
-        const iconClose = document.getElementById('chatBubbleClose');
         chatOpen = !chatOpen;
         if (chatOpen) {
             win.classList.remove('hidden');
-            iconOpen.classList.add('hidden'); iconClose.classList.remove('hidden');
-            document.getElementById('chatUnreadBadge').classList.add('hidden');
+            var ub = document.getElementById('chatUnreadBadge'); if(ub) ub.classList.add('hidden');
+            var fb = document.getElementById('fabBadge'); if(fb) fb.classList.remove('show');
             if (!chatConvoId) initChat();
             else document.getElementById('chatUserInput')?.focus();
         } else {
             win.classList.add('hidden');
-            iconOpen.classList.remove('hidden'); iconClose.classList.add('hidden');
         }
     };
 
@@ -2199,6 +2192,96 @@ if ($_chatEnabled === '1'):
 })();
 </script>
 <?php endif; // chat_enabled ?>
+
+<!-- ═══ FLOATING CONTACT BUTTON ═══ -->
+<?php
+$_fabOn = getSetting('fab_enabled','0') === '1';
+$_fabChatOn = getSetting('chat_enabled','0') === '1';
+$_fabColor = $_fabOn ? getSetting('fab_color','#3b82f6') : getSetting('chat_bubble_color','#3b82f6');
+$_fabPos = $_fabOn ? getSetting('fab_position','right') : 'right';
+$_fabSide = $_fabPos === 'left' ? 'left:16px' : 'right:16px';
+$_fabAlign = $_fabPos === 'left' ? 'left:0' : 'right:0';
+$_fabDir = $_fabPos === 'left' ? 'row' : 'row-reverse';
+
+// Build items
+$_fabItems = [];
+if ($_fabOn) {
+    if (getSetting('fab_call_enabled','0')==='1' && ($__ph=getSetting('contact_phone','')))
+        $_fabItems[] = ['id'=>'call','label'=>'কল করুন','icon'=>'fas fa-phone-alt','bg'=>'#22c55e','href'=>'tel:'.preg_replace('/[^0-9+]/','',$__ph),'tgt'=>'_self'];
+    if (getSetting('fab_chat_enabled','0')==='1' && $_fabChatOn)
+        $_fabItems[] = ['id'=>'chat','label'=>'চ্যাট করুন','icon'=>'fas fa-comments','bg'=>e($_fabColor),'href'=>'#','tgt'=>''];
+    if (getSetting('fab_whatsapp_enabled','0')==='1' && ($__wa=getSetting('whatsapp_number','')))
+        $_fabItems[] = ['id'=>'whatsapp','label'=>'WhatsApp','icon'=>'fab fa-whatsapp','bg'=>'#25d366','href'=>'https://wa.me/'.preg_replace('/[^0-9]/','',$__wa),'tgt'=>'_blank'];
+    if (getSetting('fab_messenger_enabled','0')==='1' && ($__ms=getSetting('fab_messenger_id','')))
+        $_fabItems[] = ['id'=>'messenger','label'=>'Messenger','icon'=>'fab fa-facebook-messenger','bg'=>'#0084ff','href'=>'https://www.facebook.com/messages/t/'.trim($__ms),'tgt'=>'_blank'];
+} elseif ($_fabChatOn) {
+    // FAB not enabled but chat is — show chat-only bubble
+    $_fabItems[] = ['id'=>'chat','label'=>'চ্যাট করুন','icon'=>'fas fa-comments','bg'=>e($_fabColor),'href'=>'#','tgt'=>''];
+}
+$_fabN = count($_fabItems);
+if ($_fabN > 0):
+?>
+<style>
+.fab-wrap{position:fixed;bottom:20px;<?= $_fabSide ?>;z-index:61}
+@media(max-width:1023px){.fab-wrap{bottom:72px}}
+body.overflow-hidden .fab-wrap{opacity:0!important;pointer-events:none!important;transition:opacity .3s}
+.fab-btn{width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;background:<?= e($_fabColor) ?>;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,.25);transition:transform .3s,box-shadow .3s;-webkit-tap-highlight-color:transparent;position:relative}
+.fab-btn:hover{transform:scale(1.08);box-shadow:0 6px 28px rgba(0,0,0,.32)}
+.fab-btn:active{transform:scale(.95)}
+.fab-btn .fab-ico-open,.fab-btn .fab-ico-close{position:absolute;transition:transform .3s,opacity .3s}
+.fab-btn .fab-ico-close{opacity:0;transform:rotate(-90deg)}
+.fab-wrap.open .fab-btn .fab-ico-open{opacity:0;transform:rotate(90deg)}
+.fab-wrap.open .fab-btn .fab-ico-close{opacity:1;transform:rotate(0)}
+.fab-menu{position:absolute;bottom:66px;<?= $_fabAlign ?>;display:flex;flex-direction:column;gap:10px;opacity:0;pointer-events:none;transform:translateY(10px);transition:all .25s cubic-bezier(.4,0,.2,1)}
+.fab-wrap.open .fab-menu{opacity:1;pointer-events:auto;transform:translateY(0)}
+.fab-item{display:flex;align-items:center;gap:10px;text-decoration:none;flex-direction:<?= $_fabDir ?>}
+.fab-item-ico{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 3px 14px rgba(0,0,0,.2);flex-shrink:0;font-size:18px;transition:transform .2s}
+.fab-item:hover .fab-item-ico{transform:scale(1.12)}
+.fab-item-txt{background:#fff;color:#1f2937;font-size:13px;font-weight:600;padding:6px 14px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.1);white-space:nowrap;opacity:0;transform:translateX(<?= $_fabPos==='left' ? '-8px' : '8px' ?>);transition:all .2s}
+.fab-wrap.open .fab-item-txt{opacity:1;transform:translateX(0)}
+.fab-ov{display:none;position:fixed;inset:0;z-index:60}
+.fab-wrap.open~.fab-ov{display:block}
+.fab-badge{position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;background:#ef4444;color:#fff;font-size:9px;font-weight:700;border-radius:9px;display:none;align-items:center;justify-content:center;padding:0 4px;border:2px solid #fff;line-height:1}
+.fab-badge.show{display:flex;animation:fabPulse 2s infinite}
+@keyframes fabPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+</style>
+
+<div class="fab-wrap" id="fabWrap">
+    <div class="fab-menu" id="fabMenu">
+    <?php foreach (array_reverse($_fabItems) as $fi => $fItem): ?>
+        <a href="<?= $fItem['href'] ?>" <?= $fItem['tgt'] ? 'target="'.$fItem['tgt'].'" rel="noopener"' : '' ?> class="fab-item" data-fab="<?= $fItem['id'] ?>" onclick="<?= $fItem['id']==='chat' ? 'fabChat(event)' : 'fabClose()' ?>" style="transition-delay:<?= $fi*50 ?>ms">
+            <span class="fab-item-ico" style="background:<?= $fItem['bg'] ?>"><i class="<?= $fItem['icon'] ?>"></i></span>
+            <span class="fab-item-txt"><?= $fItem['label'] ?></span>
+        </a>
+    <?php endforeach; ?>
+    </div>
+    <button class="fab-btn" id="fabBtn" onclick="fabToggle()" aria-label="Contact">
+        <svg class="fab-ico-open" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        <svg class="fab-ico-close" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        <span class="fab-badge" id="fabBadge">0</span>
+    </button>
+    <span id="chatUnreadBadge" class="hidden" style="display:none">0</span>
+</div>
+<div class="fab-ov" id="fabOv" onclick="fabClose()"></div>
+
+<script>
+function fabToggle(){
+    <?php if ($_fabN <= 1): ?>
+    <?php $si = $_fabItems[0] ?? null; if ($si): ?>
+    <?php if ($si['id']==='chat'): ?>if(typeof toggleChatWidget==='function')toggleChatWidget();<?php elseif($si['id']==='call'): ?>window.location.href='<?= $si['href'] ?>';<?php else: ?>window.open('<?= $si['href'] ?>','_blank');<?php endif; ?>
+    <?php endif; ?>return;
+    <?php endif; ?>
+    document.getElementById('fabWrap').classList.toggle('open');
+}
+function fabClose(){document.getElementById('fabWrap').classList.remove('open')}
+function fabChat(e){e.preventDefault();fabClose();if(typeof toggleChatWidget==='function')toggleChatWidget();}
+var _fabSY=0;
+window.addEventListener('scroll',function(){if(Math.abs(window.pageYOffset-_fabSY)>60)fabClose();_fabSY=window.pageYOffset},{passive:true});
+// Bridge chat unread badge
+var _cub=document.getElementById('chatUnreadBadge');
+if(_cub){new MutationObserver(function(){var n=parseInt(_cub.textContent)||0;var b=document.getElementById('fabBadge');if(b){b.textContent=n;b.classList.toggle('show',n>0)}}).observe(_cub,{childList:true,attributes:true,attributeFilter:['class']})}
+</script>
+<?php endif; // fabN > 0 ?>
 
 <!-- Padding for mobile bottom nav -->
 <div class="lg:hidden h-16"></div>

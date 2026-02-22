@@ -9,6 +9,17 @@ require_once __DIR__ . '/../includes/functions.php';
 header('Content-Type: application/json');
 $db = Database::getInstance();
 
+// ── Ensure 'landing_page' is valid for orders.channel ──
+try {
+    $colInfo = $db->fetch("SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND COLUMN_NAME = 'channel'");
+    if ($colInfo && stripos($colInfo['COLUMN_TYPE'], 'enum') !== false && stripos($colInfo['COLUMN_TYPE'], 'landing_page') === false) {
+        // Add landing_page to the ENUM
+        $type = $colInfo['COLUMN_TYPE'];
+        $newType = str_replace(")", ",'landing_page')", $type);
+        $db->query("ALTER TABLE orders MODIFY COLUMN channel $newType DEFAULT 'website'");
+    }
+} catch (\Throwable $e) { /* column may not exist or already VARCHAR */ }
+
 // ── Auto-create tables ──
 try {
     $db->fetch("SELECT 1 FROM landing_pages LIMIT 1");
