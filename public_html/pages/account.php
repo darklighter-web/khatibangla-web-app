@@ -112,6 +112,7 @@ try {
     $pendingReviewCount = intval($__prCount['cnt'] ?? 0);
 } catch (\Throwable $e) {}
 
+$seo = ['type' => 'website', 'noindex' => true];
 require_once __DIR__ . '/../includes/header.php';
 
 $statusBadges = [

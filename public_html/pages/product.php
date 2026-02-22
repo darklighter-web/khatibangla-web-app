@@ -38,6 +38,27 @@ $isOnSale = $product['sale_price'] && $product['sale_price'] > 0 && $product['sa
 $pageTitle = $product['meta_title'] ?: $product['name'] . ' | ' . getSetting('site_name');
 $pageDescription = $product['meta_description'] ?: ($product['short_description'] ?: substr(strip_tags($product['description']), 0, 160));
 
+// SEO: Product structured data + OG tags
+$_prodImg = '';
+if (!empty($product['featured_image'])) {
+    $_prodImg = $product['featured_image'];
+    if (!str_starts_with($_prodImg, 'http')) $_prodImg = SITE_URL . '/uploads/products/' . basename($_prodImg);
+}
+$seo = [
+    'type' => 'product',
+    'title' => $pageTitle,
+    'description' => $pageDescription,
+    'image' => $_prodImg,
+    'price' => $price,
+    'currency' => 'BDT',
+    'product' => $product,
+    'breadcrumbs' => [
+        ['name' => 'হোম', 'url' => SITE_URL],
+        ['name' => $product['category_name'] ?? 'Products', 'url' => SITE_URL . '/category/' . ($product['category_slug'] ?? '')],
+        ['name' => $product['name_bn'] ?: $product['name']],
+    ],
+];
+
 include ROOT_PATH . 'includes/header.php';
 
 $btnOrderLabel = getSetting('btn_order_cod_label', 'ক্যাশ অন ডেলিভারিতে অর্ডার করুন');

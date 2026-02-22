@@ -1,5 +1,6 @@
 <?php
 $pageTitle = '404 - Page Not Found';
+$seo = ['type' => 'website', 'noindex' => true];
 http_response_code(404);
 require_once __DIR__ . '/../includes/header.php';
 ?>

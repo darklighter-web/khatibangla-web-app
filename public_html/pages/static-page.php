@@ -21,7 +21,16 @@ if (!$page) {
 }
 
 $pageTitle = $page['meta_title'] ?: $page['title'];
-$metaDescription = $page['meta_description'] ?: mb_substr(strip_tags($page['content']), 0, 160);
+$pageDescription = $page['meta_description'] ?: mb_substr(strip_tags($page['content']), 0, 160);
+$seo = [
+    'type' => 'website',
+    'title' => $pageTitle . ' | ' . getSetting('site_name'),
+    'description' => $pageDescription,
+    'breadcrumbs' => [
+        ['name' => 'হোম', 'url' => SITE_URL],
+        ['name' => $page['title'] ?? ''],
+    ],
+];
 
 require_once __DIR__ . '/../includes/header.php';
 ?>

@@ -77,9 +77,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+$seo = ['type' => 'website', 'noindex' => true];
 require_once __DIR__ . '/../includes/header.php';
 ?>
-
 <div class="max-w-md mx-auto px-4 py-10">
     <div class="bg-white rounded-2xl shadow-sm border overflow-hidden">
         <!-- Tabs -->

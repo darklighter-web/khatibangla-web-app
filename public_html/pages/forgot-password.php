@@ -10,6 +10,7 @@ if (isCustomerLoggedIn()) {
     redirect(url('account'));
 }
 
+$seo = ['type' => 'website', 'noindex' => true];
 require_once __DIR__ . '/../includes/header.php';
 $hotline = getSetting('hotline_number', '') ?: getSetting('site_hotline', '');
 $email = getSetting('site_email', '');

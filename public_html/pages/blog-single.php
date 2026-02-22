@@ -66,6 +66,24 @@ try {
     $nextPost = $db->fetch("SELECT slug,title,title_bn,featured_image FROM blog_posts WHERE status='published' AND published_at > ? ORDER BY published_at ASC LIMIT 1", [$pubTs]);
 } catch (\Throwable $e) {}
 
+// SEO: Article structured data
+$pageDescription = $metaDescription;
+$seo = [
+    'type' => 'article',
+    'title' => $pageTitle,
+    'description' => $metaDescription,
+    'image' => $img,
+    'published_time' => !empty($post['published_at']) ? date('c', strtotime($post['published_at'])) : '',
+    'modified_time' => !empty($post['updated_at']) ? date('c', strtotime($post['updated_at'])) : '',
+    'author' => $author,
+    'article' => $post,
+    'breadcrumbs' => [
+        ['name' => 'হোম', 'url' => SITE_URL],
+        ['name' => 'ব্লগ', 'url' => SITE_URL . '/blog'],
+        ['name' => $title],
+    ],
+];
+
 require_once __DIR__ . '/../includes/header.php';
 ?>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Hind+Siliguri:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">

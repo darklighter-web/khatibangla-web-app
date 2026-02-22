@@ -13,6 +13,17 @@ $categories = $db->fetchAll("
     ORDER BY c.sort_order ASC, c.name ASC
 ");
 
+$pageDescription = 'Browse all product categories at ' . getSetting('site_name', 'KhatiBangla');
+$seo = [
+    'type' => 'website',
+    'title' => $pageTitle . ' | ' . getSetting('site_name'),
+    'description' => $pageDescription,
+    'breadcrumbs' => [
+        ['name' => 'হোম', 'url' => SITE_URL],
+        ['name' => 'সকল ক্যাটাগরি'],
+    ],
+];
+
 include ROOT_PATH . 'includes/header.php';
 ?>
 

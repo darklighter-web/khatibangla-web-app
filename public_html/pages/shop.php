@@ -112,6 +112,18 @@ function shopUrl($overrides = []) {
 
 $gridCols = getSetting('shop_grid_cols', getSetting('ar_grid_cols_desktop', '4'));
 
+// SEO
+$pageDescription = getSetting('shop_meta_description', '') ?: 'Browse all products at ' . getSetting('site_name', 'KhatiBangla');
+$seo = [
+    'type' => 'website',
+    'title' => $pageTitle,
+    'description' => $pageDescription,
+    'breadcrumbs' => [
+        ['name' => 'হোম', 'url' => SITE_URL],
+        ['name' => $shopTitle],
+    ],
+];
+
 include ROOT_PATH . 'includes/header.php';
 ?>
 

@@ -47,6 +47,34 @@ $totalProducts = $db->fetch("SELECT COUNT(*) as cnt FROM products p LEFT JOIN ca
 
 $pagination = paginate($totalProducts, $page, $arPerPage, currentUrl());
 
+// SEO: Category/Search page
+$_catDesc = '';
+$_catImg = '';
+$_crumbs = [['name' => 'হোম', 'url' => SITE_URL]];
+if ($category) {
+    $_catDesc = $category['meta_description'] ?? $category['description'] ?? '';
+    if (!empty($category['image'])) {
+        $_catImg = $category['image'];
+        if (!str_starts_with($_catImg, 'http')) $_catImg = SITE_URL . '/uploads/categories/' . basename($_catImg);
+    }
+    $_crumbs[] = ['name' => $category['name']];
+    $pageDescription = $_catDesc ?: ($category['name'] . ' - ' . getSetting('site_name', 'KhatiBangla'));
+} elseif ($search) {
+    $_crumbs[] = ['name' => 'Search: ' . $search];
+    $pageDescription = 'Search results for ' . $search;
+} else {
+    $_crumbs[] = ['name' => 'All Products'];
+    $pageDescription = 'Browse all products at ' . getSetting('site_name', 'KhatiBangla');
+}
+$seo = [
+    'type' => 'website',
+    'title' => $pageTitle,
+    'description' => $pageDescription ?? '',
+    'image' => $_catImg,
+    'noindex' => !empty($search), // noindex search results
+    'breadcrumbs' => $_crumbs,
+];
+
 include ROOT_PATH . 'includes/header.php';
 ?>
 

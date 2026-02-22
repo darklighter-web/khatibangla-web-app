@@ -5,6 +5,13 @@
 $pageTitle = getSetting('meta_title', getSetting('site_name'));
 $pageDescription = getSetting('meta_description');
 
+// SEO: Home page gets Organization + WebSite schema
+$seo = [
+    'type' => 'home',
+    'title' => $pageTitle,
+    'description' => $pageDescription,
+];
+
 include ROOT_PATH . 'includes/header.php';
 
 $db = Database::getInstance();

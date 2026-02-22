@@ -29,6 +29,19 @@ $blogCats = [];
 try { $blogCats = $db->fetchAll("SELECT bc.*, (SELECT COUNT(*) FROM blog_posts bp WHERE bp.category=bc.name AND bp.status='published') as post_count FROM blog_categories bc WHERE bc.is_active=1 ORDER BY bc.sort_order"); } catch (\Throwable $e) {}
 
 $lang = $_COOKIE['site_lang'] ?? getSetting('default_language', 'bn');
+
+// SEO
+$pageDescription = getSetting('blog_meta_description', '') ?: 'Read our latest articles and blog posts';
+$seo = [
+    'type' => 'website',
+    'title' => $pageTitle . ' | ' . getSetting('site_name'),
+    'description' => $pageDescription,
+    'breadcrumbs' => [
+        ['name' => 'হোম', 'url' => SITE_URL],
+        ['name' => 'ব্লগ'],
+    ],
+];
+
 require_once __DIR__ . '/../includes/header.php';
 ?>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Hind+Siliguri:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">

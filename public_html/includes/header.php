@@ -91,6 +91,12 @@ $saleBadgeText = getSetting('sale_badge_text', '#FFFFFF');
 
 $metaTitle = $pageTitle ?? getSetting('meta_title', $siteName);
 $metaDesc = $pageDescription ?? getSetting('meta_description', '');
+
+// Load SEO helper
+require_once __DIR__ . '/seo.php';
+$seo = $seo ?? ['type' => 'website'];
+$seo['title'] = $seo['title'] ?? $metaTitle;
+$seo['description'] = $seo['description'] ?? $metaDesc;
 ?>
 <!DOCTYPE html>
 <html lang="<?= $currentLang ?>" dir="ltr">
@@ -99,6 +105,8 @@ $metaDesc = $pageDescription ?? getSetting('meta_description', '');
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($metaTitle) ?></title>
     <meta name="description" content="<?= htmlspecialchars($metaDesc) ?>">
+<?= seoRenderHead($seo) ?>
+<?= seoRenderJsonLd($seo) ?>
     
     <?php if ($siteFavicon): ?>
     <link rel="icon" href="<?= uploadUrl($siteFavicon) ?>" type="image/x-icon">

@@ -3,6 +3,7 @@
  * Cart Page
  */
 $pageTitle = 'Shopping Cart | ' . getSetting('site_name');
+$seo = ['type' => 'website', 'noindex' => true];
 include ROOT_PATH . 'includes/header.php';
 $cart = getCart();
 $cartTotal = getCartTotal();

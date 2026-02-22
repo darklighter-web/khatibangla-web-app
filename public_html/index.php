@@ -108,6 +108,23 @@ switch ($page) {
     case 'account':
         include __DIR__ . '/pages/account.php';
         break;
+
+    case 'blog':
+        if ($param1) {
+            $_GET['slug'] = $param1;
+            include __DIR__ . '/pages/blog-single.php';
+        } else {
+            include __DIR__ . '/pages/blog.php';
+        }
+        break;
+
+    case 'sitemap.xml':
+        include __DIR__ . '/pages/sitemap.php';
+        break;
+
+    case 'robots.txt':
+        include __DIR__ . '/pages/robots.php';
+        break;
         
     default:
         // Try product slug first

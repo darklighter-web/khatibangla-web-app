@@ -1481,14 +1481,75 @@ require_once __DIR__ . '/../includes/header.php';
             </script>
 
             <?php elseif ($tab === 'seo'): ?>
-            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
-                <h4 class="font-semibold text-gray-800"><i class="fas fa-search mr-2 text-teal-500"></i>SEO & Open Graph</h4>
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-5">
+                <h4 class="font-semibold text-gray-800"><i class="fas fa-search mr-2 text-teal-500"></i>SEO & Meta Tags</h4>
+                <p class="text-xs text-gray-500">These settings control how your site appears in Google, Facebook, and other platforms.</p>
+                
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Site Meta Title</label>
+                        <input type="text" name="meta_title" value="<?= e($s['meta_title'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="Your Site Name — Tagline">
+                        <p class="text-xs text-gray-400 mt-1">Shows in Google search results & browser tab (50-60 chars recommended)</p></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Site Meta Description</label>
+                        <textarea name="meta_description" rows="2" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="Brief description of your business..."><?= e($s['meta_description'] ?? '') ?></textarea>
+                        <p class="text-xs text-gray-400 mt-1">Shows below title in Google (150-160 chars recommended)</p></div>
+                </div>
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Default Meta Keywords</label>
-                    <input type="text" name="meta_keywords" value="<?= e($s['meta_keywords'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm"></div>
-                <div><label class="block text-sm font-medium text-gray-700 mb-1">OG Image URL</label>
-                    <input type="text" name="og_image" value="<?= e($s['og_image'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm"></div>
-                <div><label class="block text-sm font-medium text-gray-700 mb-1">Robots.txt Content</label>
-                    <textarea name="robots_txt" rows="4" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono"><?= e($s['robots_txt'] ?? "User-agent: *\nAllow: /") ?></textarea></div>
+                    <input type="text" name="meta_keywords" value="<?= e($s['meta_keywords'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="keyword1, keyword2, keyword3">
+                    <p class="text-xs text-gray-400 mt-1">Comma-separated keywords (less important for Google now, but used by some engines)</p></div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <h4 class="font-semibold text-gray-800"><i class="fab fa-facebook mr-2 text-blue-500"></i>Open Graph (Social Sharing)</h4>
+                <p class="text-xs text-gray-500">Controls how links look when shared on Facebook, WhatsApp, Messenger, etc.</p>
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">Default OG Image</label>
+                    <input type="text" name="og_image" value="<?= e($s['og_image'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="https://khatibangla.com/uploads/og-image.jpg">
+                    <p class="text-xs text-gray-400 mt-1">Used when sharing pages without their own image. Recommended: 1200×630px</p></div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <h4 class="font-semibold text-gray-800"><i class="fas fa-check-circle mr-2 text-green-500"></i>Search Engine Verification</h4>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Google Search Console</label>
+                        <input type="text" name="google_site_verification" value="<?= e($s['google_site_verification'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="Verification code from Google">
+                        <p class="text-xs text-gray-400 mt-1">From <a href="https://search.google.com/search-console" target="_blank" class="text-blue-500 underline">Google Search Console</a> → Settings → Ownership verification → HTML tag</p></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Bing Webmaster</label>
+                        <input type="text" name="bing_site_verification" value="<?= e($s['bing_site_verification'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="Verification code from Bing">
+                        <p class="text-xs text-gray-400 mt-1">From <a href="https://www.bing.com/webmasters" target="_blank" class="text-blue-500 underline">Bing Webmaster Tools</a></p></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <h4 class="font-semibold text-gray-800"><i class="fas fa-robot mr-2 text-purple-500"></i>Robots & Sitemap</h4>
+                <p class="text-xs text-gray-500">Your sitemap is auto-generated at <a href="<?= SITE_URL ?>/sitemap.xml" target="_blank" class="text-blue-500 underline"><?= SITE_URL ?>/sitemap.xml</a></p>
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">Custom Robots.txt</label>
+                    <textarea name="robots_txt" rows="6" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono" placeholder="Leave empty for smart defaults"><?= e($s['robots_txt'] ?? '') ?></textarea>
+                    <p class="text-xs text-gray-400 mt-1">Leave empty for auto-generated robots.txt. View at <a href="<?= SITE_URL ?>/robots.txt" target="_blank" class="text-blue-500 underline">/robots.txt</a></p></div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <h4 class="font-semibold text-gray-800"><i class="fas fa-globe mr-2 text-indigo-500"></i>Social Media Profiles</h4>
+                <p class="text-xs text-gray-500">Used in structured data (Schema.org) for Google Knowledge Panel</p>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1"><i class="fab fa-facebook text-blue-600 mr-1"></i>Facebook Page URL</label>
+                        <input type="url" name="social_facebook" value="<?= e($s['social_facebook'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="https://facebook.com/yourpage"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1"><i class="fab fa-instagram text-pink-500 mr-1"></i>Instagram URL</label>
+                        <input type="url" name="social_instagram" value="<?= e($s['social_instagram'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="https://instagram.com/yourpage"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1"><i class="fab fa-youtube text-red-600 mr-1"></i>YouTube Channel URL</label>
+                        <input type="url" name="social_youtube" value="<?= e($s['social_youtube'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="https://youtube.com/@yourchannel"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1"><i class="fab fa-tiktok mr-1"></i>TikTok URL</label>
+                        <input type="url" name="social_tiktok" value="<?= e($s['social_tiktok'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="https://tiktok.com/@yourpage"></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <h4 class="font-semibold text-gray-800"><i class="fas fa-map-marker-alt mr-2 text-red-500"></i>Local Business Info (for Google)</h4>
+                <p class="text-xs text-gray-500">Helps Google show your business in local search results</p>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Business Address</label>
+                        <input type="text" name="site_address" value="<?= e($s['site_address'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="123 Main St, Dhaka, Bangladesh"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Business Email</label>
+                        <input type="email" name="site_email" value="<?= e($s['site_email'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="info@khatibangla.com"></div>
+                </div>
             </div>
 
             <?php elseif ($tab === 'advanced'): ?>

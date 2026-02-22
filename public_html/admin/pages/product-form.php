@@ -479,9 +479,49 @@ if ($product) {
 
         <!-- SEO -->
         <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
-            <h4 class="font-semibold text-gray-800">🔍 SEO</h4>
-            <div><label class="block text-sm font-medium text-gray-700 mb-1">Meta Title</label><input type="text" name="meta_title" value="<?= e($product['meta_title'] ?? '') ?>" class="w-full px-3 py-2 border rounded-lg text-sm"></div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-1">Meta Description</label><textarea name="meta_description" rows="2" class="w-full px-3 py-2 border rounded-lg text-sm"><?= e($product['meta_description'] ?? '') ?></textarea></div>
+            <h4 class="font-semibold text-gray-800">🔍 SEO — Search Engine Optimization</h4>
+            
+            <!-- Google Preview -->
+            <div class="bg-gray-50 rounded-lg p-4 border border-dashed border-gray-300">
+                <p class="text-[10px] text-gray-400 mb-2 uppercase tracking-wider font-semibold">Google Preview</p>
+                <div>
+                    <div id="seo-preview-title" class="text-[#1a0dab] text-lg font-medium truncate" style="font-family:arial"><?= e($product['meta_title'] ?? $product['name'] ?? 'Product Name') ?></div>
+                    <div id="seo-preview-url" class="text-[#006621] text-sm truncate" style="font-family:arial"><?= SITE_URL ?>/product/<?= e($product['slug'] ?? 'product-slug') ?></div>
+                    <div id="seo-preview-desc" class="text-[#545454] text-sm mt-0.5" style="font-family:arial;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden"><?= e($product['meta_description'] ?? mb_substr(strip_tags($product['short_description'] ?? $product['description'] ?? ''), 0, 160)) ?></div>
+                </div>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Meta Title <span class="text-gray-400 font-normal" id="seo-title-count"></span></label>
+                <input type="text" name="meta_title" value="<?= e($product['meta_title'] ?? '') ?>" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Leave empty for auto: Product Name | Site Name" oninput="updateSeoPreview()">
+                <p class="text-xs text-gray-400 mt-1">Ideal: 50-60 characters. Shows as the blue link in Google.</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Meta Description <span class="text-gray-400 font-normal" id="seo-desc-count"></span></label>
+                <textarea name="meta_description" rows="2" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Leave empty for auto: uses short description" oninput="updateSeoPreview()"><?= e($product['meta_description'] ?? '') ?></textarea>
+                <p class="text-xs text-gray-400 mt-1">Ideal: 150-160 characters. Shows below the title in Google.</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Focus Keyword</label>
+                <input type="text" name="focus_keyword" value="<?= e($product['focus_keyword'] ?? '') ?>" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="e.g. সরিষার তেল, organic mustard oil">
+                <p class="text-xs text-gray-400 mt-1">Reminder for yourself — what keyword should this product rank for?</p>
+            </div>
+            
+            <script>
+            function updateSeoPreview(){
+                var t=document.querySelector('[name="meta_title"]').value||document.querySelector('[name="name"]')?.value||'Product';
+                var d=document.querySelector('[name="meta_description"]').value||'';
+                document.getElementById('seo-preview-title').textContent=t;
+                if(d)document.getElementById('seo-preview-desc').textContent=d;
+                var tc=document.getElementById('seo-title-count');
+                var dc=document.getElementById('seo-desc-count');
+                if(tc)tc.textContent='('+t.length+'/60)';
+                if(dc)dc.textContent='('+d.length+'/160)';
+                if(tc)tc.style.color=t.length>60?'#ef4444':'#9ca3af';
+                if(dc)dc.style.color=d.length>160?'#ef4444':'#9ca3af';
+            }
+            document.addEventListener('DOMContentLoaded',updateSeoPreview);
+            </script>
         </div>
     </div>
 
