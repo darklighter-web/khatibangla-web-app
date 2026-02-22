@@ -691,47 +691,69 @@ foreach ($_lpFormFields as $_cf):
                 </div>
             </div>
         </div>
-        <input type="text" id="lpPName" name="name" required placeholder="আপনার পুরো নাম" style="width:100%;padding:10px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;outline:none">
-        <input type="tel" id="lpPPhone" name="phone" required placeholder="মোবাইল নম্বর (01XXXXXXXXX)" pattern="01[0-9]{9}" style="width:100%;padding:10px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;outline:none">
-        <textarea id="lpPAddr" name="address" required placeholder="সম্পূর্ণ ঠিকানা" rows="2" style="width:100%;padding:10px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;outline:none;resize:vertical"></textarea>
-<?php foreach ($_lpFormFields as $_cf):
+<?php
+$_ppIS = "width:100%;padding:10px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;outline:none;transition:border .2s";
+foreach ($_lpFormFields as $_cf):
     $_k = $_cf['key'] ?? '';
-    if (in_array($_k, ['name','phone','address'])) continue; // already rendered above
     $_l = htmlspecialchars($_cf['label'] ?? '');
     $_p = htmlspecialchars($_cf['placeholder'] ?? '');
     $_req = !empty($_cf['required']);
     $_ra = $_req ? 'required' : '';
-    $_pS = "width:100%;padding:10px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;outline:none";
+    $_star = $_req ? ' <span style="color:#ef4444">*</span>' : '';
 ?>
-<?php if ($_k === 'email'): ?>
-        <input type="email" name="email" <?= $_ra ?> placeholder="<?= $_l ?>" style="<?= $_pS ?>">
+<?php if ($_k === 'product_selector'): ?>
+        <?php /* product_selector not needed in popup — product already selected via card click */ ?>
+<?php elseif ($_k === 'name'): ?>
+        <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:4px"><?= $_l ?><?= $_star ?></label>
+            <input type="text" name="name" <?= $_ra ?> placeholder="<?= $_p ?>" style="<?= $_ppIS ?>" onfocus="this.style.borderColor='<?= $pc ?>'" onblur="this.style.borderColor='#e5e7eb'">
+        </div>
+<?php elseif ($_k === 'phone'): ?>
+        <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:4px"><?= $_l ?><?= $_star ?></label>
+            <input type="tel" name="phone" <?= $_ra ?> placeholder="<?= $_p ?>" pattern="01[0-9]{9}" style="<?= $_ppIS ?>" onfocus="this.style.borderColor='<?= $pc ?>'" onblur="this.style.borderColor='#e5e7eb'">
+        </div>
+<?php elseif ($_k === 'email'): ?>
+        <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:4px"><?= $_l ?><?= $_star ?></label>
+            <input type="email" name="email" <?= $_ra ?> placeholder="<?= $_p ?>" style="<?= $_ppIS ?>" onfocus="this.style.borderColor='<?= $pc ?>'" onblur="this.style.borderColor='#e5e7eb'">
+        </div>
+<?php elseif ($_k === 'address'): ?>
+        <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:4px"><?= $_l ?><?= $_star ?></label>
+            <textarea name="address" <?= $_ra ?> placeholder="<?= $_p ?>" rows="2" style="<?= $_ppIS ?>;resize:vertical" onfocus="this.style.borderColor='<?= $pc ?>'" onblur="this.style.borderColor='#e5e7eb'"></textarea>
+        </div>
 <?php elseif ($_k === 'lp_upsells'): ?>
         <div id="lpPopupUpsellWrap" style="display:none">
             <label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:6px"><span style="color:#f97316">🔥</span> <?= $_l ?></label>
             <div id="lpPopupUpsellList" style="display:flex;flex-direction:column;gap:6px"></div>
         </div>
-<?php elseif ($_k === 'product_selector'): ?>
-        <?php /* product_selector not needed in popup — product already selected */ ?>
 <?php elseif ($_k === 'shipping_area'): ?>
-        <div style="display:flex;gap:6px">
-            <label style="flex:1;text-align:center;padding:8px 4px;border:1.5px solid #e5e7eb;border-radius:8px;cursor:pointer;transition:all .2s" class="lp-area-opt" onclick="lpAreaPick(this)">
-                <input type="radio" name="shipping_area" value="inside_dhaka" style="display:none">
-                <div style="font-weight:600;font-size:11px;color:#1e293b;margin-bottom:1px">ঢাকার ভিতরে</div>
-                <div style="font-size:11px;color:#94a3b8">৳<?= $ofDhaka ?></div>
-            </label>
-            <label style="flex:1;text-align:center;padding:8px 4px;border:1.5px solid #e5e7eb;border-radius:8px;cursor:pointer;transition:all .2s" class="lp-area-opt" onclick="lpAreaPick(this)">
-                <input type="radio" name="shipping_area" value="dhaka_sub" style="display:none">
-                <div style="font-weight:600;font-size:11px;color:#1e293b;margin-bottom:1px">ঢাকা উপশহর</div>
-                <div style="font-size:11px;color:#94a3b8">৳<?= $ofSub ?></div>
-            </label>
-            <label style="flex:1;text-align:center;padding:8px 4px;border:1.5px solid <?= $pc ?>;border-radius:8px;cursor:pointer;transition:all .2s;background:<?= $pc ?>08" class="lp-area-opt lp-area-active" onclick="lpAreaPick(this)">
-                <input type="radio" name="shipping_area" value="outside_dhaka" checked style="display:none">
-                <div style="font-weight:600;font-size:11px;color:#1e293b;margin-bottom:1px">ঢাকার বাইরে</div>
-                <div style="font-size:11px;color:<?= $pc ?>">৳<?= $ofOut ?></div>
-            </label>
+        <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:6px"><?= $_l ?><?= $_star ?></label>
+            <div style="display:flex;gap:6px">
+                <label style="flex:1;text-align:center;padding:8px 4px;border:1.5px solid #e5e7eb;border-radius:8px;cursor:pointer;transition:all .2s" class="lp-area-opt" onclick="lpAreaPick(this)">
+                    <input type="radio" name="shipping_area" value="inside_dhaka" style="display:none">
+                    <div style="font-weight:600;font-size:11px;color:#1e293b;margin-bottom:1px">ঢাকার ভিতরে</div>
+                    <div style="font-size:11px;color:#94a3b8">৳<?= $ofDhaka ?></div>
+                </label>
+                <label style="flex:1;text-align:center;padding:8px 4px;border:1.5px solid #e5e7eb;border-radius:8px;cursor:pointer;transition:all .2s" class="lp-area-opt" onclick="lpAreaPick(this)">
+                    <input type="radio" name="shipping_area" value="dhaka_sub" style="display:none">
+                    <div style="font-weight:600;font-size:11px;color:#1e293b;margin-bottom:1px">ঢাকা উপশহর</div>
+                    <div style="font-size:11px;color:#94a3b8">৳<?= $ofSub ?></div>
+                </label>
+                <label style="flex:1;text-align:center;padding:8px 4px;border:1.5px solid <?= $pc ?>;border-radius:8px;cursor:pointer;transition:all .2s;background:<?= $pc ?>08" class="lp-area-opt lp-area-active" onclick="lpAreaPick(this)">
+                    <input type="radio" name="shipping_area" value="outside_dhaka" checked style="display:none">
+                    <div style="font-weight:600;font-size:11px;color:#1e293b;margin-bottom:1px">ঢাকার বাইরে</div>
+                    <div style="font-size:11px;color:<?= $pc ?>">৳<?= $ofOut ?></div>
+                </label>
+            </div>
         </div>
 <?php elseif ($_k === 'notes'): ?>
-        <input type="text" name="notes" placeholder="<?= $_l ?>" style="<?= $_pS ?>">
+        <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:4px"><?= $_l ?><?= $_star ?></label>
+            <input type="text" name="notes" <?= $_ra ?> placeholder="<?= $_p ?>" style="<?= $_ppIS ?>" onfocus="this.style.borderColor='<?= $pc ?>'" onblur="this.style.borderColor='#e5e7eb'">
+        </div>
 <?php endif; endforeach; ?>
         <button type="submit" id="lpPopupBtn" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:800;color:#fff;background:<?= $ofBtnColor ?>;cursor:pointer;font-family:inherit"><?= htmlspecialchars($ofBtnText) ?></button>
         <p id="lpPopupErr" style="display:none;color:#ef4444;font-size:12px;text-align:center;margin:0"></p>
@@ -769,6 +791,7 @@ foreach ($_lpFormFields as $_cf):
     const LP_PCA = '<?= $pca ?>';
     const LP_CM = '<?= $checkoutMode ?>';
     const LP_DEL = {inside_dhaka:<?= $ofDhaka ?? 70 ?>,dhaka_sub:<?= $ofSub ?? 100 ?>,outside_dhaka:<?= $ofOut ?? 130 ?>};
+    const PC = '<?= $pc ?>';
     const LP_UP = <?php 
         // LP-specific upsell products
         $_lpUp = $settings['lp_upsell_products'] ?? [];
@@ -1203,14 +1226,26 @@ foreach ($_lpFormFields as $_cf):
         });
     }
 
-    function lpValidate(name, phone, addr, errEl) {
-        if (!name || !phone || !addr) {
-            if(errEl){errEl.textContent='সকল ফিল্ড পূরণ করুন';errEl.style.display='block';}
-            return false;
+    function lpValidate(formEl, errEl) {
+        // Only validate fields that exist in the form and have 'required' attribute
+        var nameEl = formEl.querySelector('[name="name"]');
+        var phoneEl = formEl.querySelector('[name="phone"]');
+        var addrEl = formEl.querySelector('[name="address"]');
+        if (nameEl && nameEl.required && !nameEl.value.trim()) {
+            if(errEl){errEl.textContent='নাম পূরণ করুন';errEl.style.display='block';}
+            nameEl.focus(); return false;
         }
-        if (!/^01[0-9]{9}$/.test(phone)) {
+        if (phoneEl && phoneEl.required && !phoneEl.value.trim()) {
+            if(errEl){errEl.textContent='মোবাইল নম্বর দিন';errEl.style.display='block';}
+            phoneEl.focus(); return false;
+        }
+        if (phoneEl && phoneEl.value.trim() && !/^01[0-9]{9}$/.test(phoneEl.value.trim())) {
             if(errEl){errEl.textContent='সঠিক মোবাইল নম্বর দিন (01XXXXXXXXX)';errEl.style.display='block';}
-            return false;
+            phoneEl.focus(); return false;
+        }
+        if (addrEl && addrEl.required && !addrEl.value.trim()) {
+            if(errEl){errEl.textContent='ঠিকানা পূরণ করুন';errEl.style.display='block';}
+            addrEl.focus(); return false;
         }
         if(errEl) errEl.style.display='none';
         return true;
@@ -1228,10 +1263,7 @@ foreach ($_lpFormFields as $_cf):
         var errEl = document.getElementById('lpFormErr');
         var btn = document.getElementById('lpFormBtn');
         var formEl = document.getElementById('lpInlineForm');
-        var name = (formEl.querySelector('[name="name"]') || {}).value || '';
-        var phone = (formEl.querySelector('[name="phone"]') || {}).value || '';
-        var addr = (formEl.querySelector('[name="address"]') || {}).value || '';
-        if (!lpValidate(name.trim(), phone.trim(), addr.trim(), errEl)) return false;
+        if (!lpValidate(formEl, errEl)) return false;
         // Use product from selector if present
         var pid = _lpHasSelector ? _lpSelProduct : lpResolveProduct();
         var qty = _lpHasSelector ? _lpSelQty : (_lpSelQty || 1);
@@ -1265,10 +1297,7 @@ foreach ($_lpFormFields as $_cf):
         var errEl = document.getElementById('lpPopupErr');
         var btn = document.getElementById('lpPopupBtn');
         var formEl = document.getElementById('lpPopupForm');
-        var name = (formEl.querySelector('[name="name"]') || {}).value || '';
-        var phone = (formEl.querySelector('[name="phone"]') || {}).value || '';
-        var addr = (formEl.querySelector('[name="address"]') || {}).value || '';
-        if (!lpValidate(name.trim(), phone.trim(), addr.trim(), errEl)) return false;
+        if (!lpValidate(formEl, errEl)) return false;
         lpDoSubmit('lpPopupForm', _lpPopupProduct, _lpPopupQty, errEl, btn, 'lpPopupSuccess', 'lpPopupOrderNum', _lpPopupUpsells);
         return false;
     };
