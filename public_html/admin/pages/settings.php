@@ -93,7 +93,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Handle checkbox fields
     $checkboxMap = [
-        'general' => ['maintenance_mode'],
+        'general' => [],
+        'advanced' => ['maintenance_mode'],
         'shipping' => ['auto_detect_location'],
         'checkout' => ['checkout_note_enabled'],
         'email' => ['smtp_enabled'],
@@ -226,18 +227,6 @@ require_once __DIR__ . '/../includes/header.php';
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
-                <h4 class="font-semibold text-gray-800"><i class="fas fa-wrench mr-2 text-orange-500"></i>Store Controls</h4>
-                <label class="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <input type="hidden" name="maintenance_mode" value="0">
-                    <input type="checkbox" name="maintenance_mode" value="1" class="w-4 h-4 rounded text-red-600" <?= ($s['maintenance_mode'] ?? '0') === '1' ? 'checked' : '' ?>>
-                    <div><span class="text-sm font-medium text-gray-700">Maintenance Mode</span>
-                        <p class="text-xs text-gray-400">Visitors see a "coming soon" page</p></div>
-                </label>
-                <div><label class="block text-sm font-medium text-gray-700 mb-1">Maintenance Message</label>
-                    <textarea name="maintenance_message" rows="2" class="w-full px-3 py-2.5 border rounded-lg text-sm"><?= e($s['maintenance_message'] ?? 'আমরা শীঘ্রই ফিরে আসছি!') ?></textarea></div>
             </div>
 
             <?php elseif ($tab === 'colors'): ?>
