@@ -126,6 +126,14 @@ function setPreviewMode(mode){
 /* LP-specific overrides */
 .lp-wrap{font-family:'<?= $fB ?>','Noto Sans Bengali',sans-serif;color:#1a1a2e;overflow-x:hidden}
 .lp-wrap,.lp-wrap *,.lp-wrap *::before,.lp-wrap *::after{box-sizing:border-box}
+/* Tailwind Preflight overrides for form elements */
+.lp-wrap button{font-family:inherit}
+.lp-wrap .lp-qty-ctrl button{background:#f1f5f9!important;border:none!important;cursor:pointer}
+.lp-wrap .lp-prod-opt{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.lp-wrap #lpProdSelector label{transition:all .2s}
+.lp-wrap #lpFormBtn,.lp-wrap #lpPopupBtn{cursor:pointer}
+.lp-wrap input[type="radio"]{width:16px;height:16px;cursor:pointer}
+.lp-wrap .lp-area-opt{cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent}
 .lp-wrap h1,.lp-wrap h2,.lp-wrap h3,.lp-wrap h4{font-family:'<?= $fH ?>','Noto Sans Bengali',serif;line-height:1.3}
 .lp-wrap img{max-width:100%;height:auto;display:block}
 .ct{max-width:1100px;margin:0 auto;padding:0 16px}
@@ -628,7 +636,7 @@ foreach ($_lpFormFields as $_cf):
                 <input type="text" name="notes" <?= $_ra ?> placeholder="<?= $_p ?>" style="<?= $_lpIS ?>" onfocus="this.style.borderColor='<?= $pc ?>'" onblur="this.style.borderColor='#e5e7eb'">
             </div>
 <?php endif; endforeach; ?>
-            <div id="lpFormTotal" style="display:none;background:#f8fafc;border-radius:10px;padding:12px 16px;margin-top:4px">
+            <div id="lpFormTotal" style="<?= count($allProducts) > 0 ? '' : 'display:none;' ?>background:#f8fafc;border-radius:10px;padding:12px 16px;margin-top:4px">
                 <div style="display:flex;justify-content:space-between;font-size:13px;color:#6b7280;margin-bottom:4px"><span>সাবটোটাল</span><span id="lpTotSub">৳0</span></div>
                 <div style="display:flex;justify-content:space-between;font-size:13px;color:#6b7280;margin-bottom:4px"><span>ডেলিভারি</span><span id="lpTotDel">৳<?= $ofOut ?></span></div>
                 <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:800;color:<?= $sc ?>;border-top:1px solid #e5e7eb;padding-top:8px;margin-top:4px"><span>মোট</span><span id="lpTotAll">৳0</span></div>
@@ -1283,21 +1291,17 @@ foreach ($_lpFormFields as $_cf):
         }
 
         function scrollToFormByIdx(idx) {
-            // Match by product index (for unlinked products)
-            var match = document.querySelector('#lpProdList .lp-prod-opt[data-idx="'+idx+'"]');
-            if (match) {
-                lpPickProduct(match);
+            // Match by product index in selector (for unlinked products)
+            if (_lpHasSelector) {
+                var match = document.querySelector('#lpProdList .lp-prod-opt[data-idx="'+idx+'"]');
+                if (match) lpPickProduct(match);
             }
             document.getElementById('order')?.scrollIntoView({behavior:'smooth'});
         }
 
         switch (LP_PCA) {
             case 'regular_checkout':
-                // If LP has product selector, scroll to form instead of opening site checkout
-                if (_lpHasSelector && LP_CM === 'landing') {
-                    if (realProductId > 0) scrollToForm(realProductId);
-                    else scrollToFormByIdx(idx);
-                } else if (realProductId > 0) { openSitePopup(realProductId); }
+                if (realProductId > 0) { openSitePopup(realProductId); }
                 else { ensureProductId(idx, function(pid){ openSitePopup(pid); }); }
                 break;
             case 'landing_popup':
@@ -1306,20 +1310,15 @@ foreach ($_lpFormFields as $_cf):
                 break;
             case 'scroll_to_order':
                 if (realProductId > 0) scrollToForm(realProductId);
-                else if (_lpHasSelector) scrollToFormByIdx(idx);
-                else ensureProductId(idx, function(pid){ scrollToForm(pid); });
+                else scrollToFormByIdx(idx);
                 break;
             case 'product_link':
                 var link = LP_P[idx]?.product_link;
                 if (link) window.location.href = link;
-                else if (_lpHasSelector) scrollToFormByIdx(idx);
                 else scrollToForm(realProductId);
                 break;
             default:
-                if (_lpHasSelector && LP_CM === 'landing') {
-                    if (realProductId > 0) scrollToForm(realProductId);
-                    else scrollToFormByIdx(idx);
-                } else if (realProductId > 0) { openLpPopup(realProductId); }
+                if (realProductId > 0) { openLpPopup(realProductId); }
                 else { ensureProductId(idx, function(pid){ openLpPopup(pid); }); }
                 break;
         }
