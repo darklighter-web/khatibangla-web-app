@@ -530,7 +530,7 @@ foreach ($_lpCf as $_cf) {
     <h2 style="color:<?= $sc ?>;font-size:clamp(20px,5vw,30px);font-weight:900;text-align:center;margin:0 0 4px"><?= htmlspecialchars($ofTitle) ?></h2>
     <?php if ($ofSubtitle): ?><p style="text-align:center;opacity:.6;margin:0 0 20px;font-size:14px"><?= htmlspecialchars($ofSubtitle) ?></p><?php else: ?><div style="height:16px"></div><?php endif; ?>
 
-    <form id="lpInlineForm" onsubmit="return lpSubmitInline(event)" style="background:#fff;border-radius:16px;padding:24px 20px;box-shadow:0 4px 24px rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.06)">
+    <form id="lpInlineForm" onsubmit="return lpSubmitInline(event)" style="background:#fff;border-radius:16px;padding:24px 20px;box-shadow:0 4px 24px rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.06);text-align:left">
         <input type="hidden" name="<?= CSRF_TOKEN_NAME ?>" value="<?= generateCSRFToken() ?>">
         <input type="hidden" name="channel" value="landing_page">
         <input type="hidden" name="lp_page_id" value="<?= $pageId ?>">
