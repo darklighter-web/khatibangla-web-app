@@ -28,7 +28,8 @@ $isDark = ($gameType === 'space');
 *{margin:0;padding:0;box-sizing:border-box}
 html{height:100%;-webkit-text-size-adjust:100%}
 body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;min-height:100%;min-height:100dvh;overflow-x:hidden;overflow-y:auto;
-  background:<?= $isDark ? '#0b0f1a' : '#fef9ef' ?>;color:<?= $isDark ? '#e2e8f0' : '#3d2c1e' ?>}
+  background:<?= $isDark ? '#0b0f1a' : '#fef9ef' ?>;color:<?= $isDark ? '#e2e8f0' : '#3d2c1e' ?>;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;-webkit-touch-callout:none;user-select:none}
 
 .wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;padding:24px 16px;position:relative;z-index:1;gap:0}
 .logo-area{text-align:center;margin-bottom:10px}
@@ -223,7 +224,7 @@ body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;min-height:100%;m
                     বাধা এড়ান, কলা সংগ্রহ করুন!<br>🕹️ জাম্প করুন (ডবল জাম্প সাপোর্ট)
                     <?php endif; ?>
                 </div>
-                <div class="key-hint" id="startHint">▶ শুরু করতে TAP করুন</div>
+                <div class="key-hint" id="startHint">👆 যেকোনো জায়গায় TAP করুন</div>
             </div>
 
             <!-- Game Over Screen -->
@@ -331,19 +332,21 @@ document.addEventListener('keydown', function(e){
     }
 });
 
-// Touch — on entire game area
-document.getElementById('canvasWrap').addEventListener('touchstart', function(e){
+// Touch — ENTIRE SCREEN is tap zone on mobile for best experience
+document.addEventListener('touchstart', function(e){
+    // Don't intercept touches on restart button (let it handle itself)
+    if(e.target && e.target.id === 'restartBtn') return;
     e.preventDefault();
     doJump();
 }, {passive: false});
 
-// Mouse click on game area
+// Mouse click on game area only (desktop)
 document.getElementById('canvasWrap').addEventListener('click', function(e){
     e.preventDefault();
     doJump();
 });
 
-// Restart button specifically
+// Restart button
 document.getElementById('restartBtn').addEventListener('click', function(e){
     e.preventDefault();
     e.stopPropagation();
@@ -667,7 +670,7 @@ if(GAME === 'space'){
 var isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 var hintEl = document.getElementById('startHint');
 if(hintEl){
-    hintEl.textContent = isTouchDevice ? '👆 শুরু করতে TAP করুন' : '▶ শুরু করতে SPACE চাপুন';
+    hintEl.textContent = isTouchDevice ? '👆 যেকোনো জায়গায় TAP করুন' : '▶ শুরু করতে SPACE চাপুন';
 }
 
 // Handle orientation change
