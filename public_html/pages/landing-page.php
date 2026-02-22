@@ -796,12 +796,12 @@ foreach ($_lpFormFields as $_cf):
         // LP-specific upsell products
         $_lpUp = $settings['lp_upsell_products'] ?? [];
         if (!empty($_lpUp)) {
-            // Enrich from DB
+            // Enrich from DB (include LP temp products with is_active=0)
             $_upEnriched = [];
             foreach ($_lpUp as $_u) {
                 $_uid = intval($_u['id'] ?? 0);
                 if (!$_uid) continue;
-                $_uRow = $db->fetch("SELECT id, name, name_bn, featured_image, regular_price, sale_price, is_on_sale FROM products WHERE id = ? AND is_active = 1", [$_uid]);
+                $_uRow = $db->fetch("SELECT id, name, name_bn, featured_image, regular_price, sale_price, is_on_sale FROM products WHERE id = ?", [$_uid]);
                 if ($_uRow) {
                     $_upEnriched[] = [
                         'id' => $_uRow['id'],
@@ -813,6 +813,20 @@ foreach ($_lpFormFields as $_cf):
                 }
             }
             echo json_encode($_upEnriched, JSON_UNESCAPED_UNICODE);
+        } elseif (count($allProducts) > 1) {
+            // Auto-suggest: use other LP products as upsells
+            $_autoUp = [];
+            foreach ($allProducts as $_ap) {
+                $_apId = intval($_ap['real_product_id'] ?? 0);
+                if ($_apId <= 0) continue;
+                $_autoUp[] = [
+                    'id' => $_apId,
+                    'name' => $_ap['name'] ?? '',
+                    'image' => $_ap['image'] ?? '',
+                    'price' => floatval($_ap['price'] ?? 0),
+                ];
+            }
+            echo json_encode($_autoUp, JSON_UNESCAPED_UNICODE);
         } else {
             echo '[]';
         }
@@ -975,7 +989,13 @@ foreach ($_lpFormFields as $_cf):
         }
         
         // Fallback: fetch auto-upsells from API (only for real product IDs)
-        if (!pid || pid < 0) { wrap.style.display = 'none'; return; }
+        if (!pid || pid < 0) {
+            // For unlinked products, no API fallback available
+            wrap.style.display = 'none';
+            if (target === 'inline') { _lpUpsells = []; lpRecalcTotal(); }
+            else { _lpPopupUpsells = []; }
+            return;
+        }
         
         fetch(SITE_URL + '/api/cart.php?action=get_upsells&product_ids=' + pid + '&limit=4')
             .then(function(r) { return r.json(); })
