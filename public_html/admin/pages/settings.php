@@ -1553,6 +1553,51 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
 
             <?php elseif ($tab === 'advanced'): ?>
+            <!-- Maintenance Mode -->
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <h4 class="font-semibold text-gray-800"><i class="fas fa-hard-hat mr-2 text-amber-500"></i>Maintenance Mode</h4>
+                <p class="text-xs text-gray-500">When enabled, visitors see a "maintenance" page with a mini-game. Admins can still access the site normally.</p>
+                
+                <div class="flex items-center gap-3 p-3 rounded-lg <?= ($s['maintenance_mode'] ?? '0') === '1' ? 'bg-amber-50 border border-amber-300' : 'bg-gray-50 border border-gray-200' ?>">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="hidden" name="maintenance_mode" value="0">
+                        <input type="checkbox" name="maintenance_mode" value="1" <?= ($s['maintenance_mode'] ?? '0') === '1' ? 'checked' : '' ?> class="rounded border-gray-300 text-amber-600 focus:ring-amber-500 w-5 h-5">
+                        <span class="text-sm font-semibold <?= ($s['maintenance_mode'] ?? '0') === '1' ? 'text-amber-700' : 'text-gray-700' ?>">
+                            <?= ($s['maintenance_mode'] ?? '0') === '1' ? '🟡 সাইটটি মেইনটেন্যান্স মোডে আছে' : 'মেইনটেন্যান্স মোড চালু করুন' ?>
+                        </span>
+                    </label>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">কাস্টম মেসেজ (ঐচ্ছিক)</label>
+                        <textarea name="maintenance_message" rows="2" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="খালি রাখলে ডিফল্ট বার্তা দেখাবে"><?= e($s['maintenance_message'] ?? '') ?></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">আনুমানিক সময় (ঐচ্ছিক)</label>
+                        <input type="text" name="maintenance_eta" value="<?= e($s['maintenance_eta'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm" placeholder="যেমন: ৩০ মিনিট, ২ ঘন্টা">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">বাইপাস কী (ঐচ্ছিক)</label>
+                    <div class="flex gap-2">
+                        <input type="text" name="maintenance_bypass_key" value="<?= e($s['maintenance_bypass_key'] ?? '') ?>" class="flex-1 px-3 py-2.5 border rounded-lg text-sm font-mono" placeholder="একটি সিক্রেট কী" id="bypassKeyInput">
+                        <button type="button" onclick="document.getElementById('bypassKeyInput').value=Math.random().toString(36).substr(2,10)" class="px-3 py-2 bg-gray-100 border rounded-lg text-xs font-medium hover:bg-gray-200 whitespace-nowrap">🔑 Generate</button>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">সেট করলে <code class="bg-gray-100 px-1 rounded">?bypass=KEY</code> দিয়ে ভিজিটররাও সাইট দেখতে পারবে</p>
+                </div>
+                
+                <?php if (($s['maintenance_mode'] ?? '0') === '1'): ?>
+                <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p class="text-xs text-amber-700"><strong>⚠️ সাইটটি এখন মেইনটেন্যান্স মোডে আছে।</strong> ভিজিটররা একটি গেম পেজ দেখছে। আপনি অ্যাডমিন হিসেবে সাইটটি স্বাভাবিকভাবে দেখতে পারবেন।</p>
+                    <?php if (!empty($s['maintenance_bypass_key'])): ?>
+                    <p class="text-xs text-amber-600 mt-1">শেয়ার করুন: <code class="bg-white px-1 py-0.5 rounded text-xs"><?= SITE_URL ?>?bypass=<?= e($s['maintenance_bypass_key']) ?></code></p>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+
             <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
                 <h4 class="font-semibold text-gray-800"><i class="fas fa-tools mr-2 text-gray-500"></i>Advanced Settings</h4>
                 <div class="grid md:grid-cols-2 gap-4">

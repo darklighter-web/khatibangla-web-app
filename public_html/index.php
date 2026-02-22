@@ -29,6 +29,21 @@ $basePath = parse_url(SITE_URL, PHP_URL_PATH) ?: '';
 $route = trim(str_replace($basePath, '', $requestUri), '/');
 $segments = $route ? explode('/', $route) : [];
 
+// ── Maintenance Mode ──
+$_maintMode = getSetting('maintenance_mode', '0') === '1';
+if ($_maintMode) {
+    $_seg0 = $segments[0] ?? '';
+    // Allow: admin panel, API, login, assets, and bypass key
+    $_allowThrough = in_array($_seg0, ['admin','admin-panel','api','login','assets','uploads','css','js','favicon.ico']);
+    $_hasBypass = !empty($_GET['bypass']) && getSetting('maintenance_bypass_key','') !== '' && $_GET['bypass'] === getSetting('maintenance_bypass_key','');
+    $_isLoggedAdmin = !empty($_SESSION['admin_id']);
+    
+    if (!$_allowThrough && !$_isLoggedAdmin && !$_hasBypass) {
+        include __DIR__ . '/maintenance.php';
+        exit;
+    }
+}
+
 // Route matching
 $page = $segments[0] ?? 'home';
 $param1 = $segments[1] ?? null;
