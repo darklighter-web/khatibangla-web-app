@@ -360,7 +360,7 @@ function sortIcon($col) {
         <?php if ($status): ?><input type="hidden" name="status" value="<?= e($status) ?>"><?php endif; ?>
         <input type="date" name="date_from" value="<?= e($dateFrom) ?>" class="px-2.5 py-1.5 border rounded text-xs">
         <input type="date" name="date_to" value="<?= e($dateTo) ?>" class="px-2.5 py-1.5 border rounded text-xs">
-        <select name="channel" class="px-2.5 py-1.5 border rounded text-xs"><option value="">All Channels</option><?php foreach(['website','facebook','phone','whatsapp'] as $ch): ?><option value="<?= $ch ?>" <?= $channel===$ch?'selected':'' ?>><?= ucfirst($ch) ?></option><?php endforeach; ?></select>
+        <select name="channel" class="px-2.5 py-1.5 border rounded text-xs"><option value="">All Channels</option><?php foreach(['website','facebook','phone','whatsapp','instagram','landing_page'] as $ch): ?><option value="<?= $ch ?>" <?= $channel===$ch?'selected':'' ?>><?= ucfirst(str_replace('_',' ',$ch)) ?></option><?php endforeach; ?></select>
         <select name="assigned" class="px-2.5 py-1.5 border rounded text-xs"><option value="">All Staff</option><?php foreach($adminUsers as $au): ?><option value="<?= $au['id'] ?>" <?= $assignedTo==$au['id']?'selected':'' ?>><?= e($au['full_name']) ?></option><?php endforeach; ?></select>
         <div class="flex gap-2"><button class="flex-1 bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-medium">Apply</button><a href="<?= adminUrl('pages/order-management.php') ?>" class="bg-gray-100 text-gray-500 px-3 py-1.5 rounded text-xs">✕</a></div>
     </form>
@@ -435,7 +435,7 @@ function sortIcon($col) {
     }
     
     // Source/channel display
-    $channelMap = ['website'=>'WEB','facebook'=>'FACEBOOK','phone'=>'PHONE','whatsapp'=>'WHATSAPP','instagram'=>'INSTAGRAM'];
+    $channelMap = ['website'=>'WEB','facebook'=>'FACEBOOK','phone'=>'PHONE','whatsapp'=>'WHATSAPP','instagram'=>'INSTAGRAM','landing_page'=>'LP'];
     $srcLabel = $channelMap[$order['channel'] ?? ''] ?? strtoupper($order['channel'] ?? '—');
 ?>
 <tr>

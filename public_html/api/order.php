@@ -19,6 +19,18 @@ try {
     header('Content-Type: application/json');
     require_once __DIR__ . '/../includes/functions.php';
 
+    // Ensure 'landing_page' channel exists in orders table ENUM
+    if (($_POST['channel'] ?? '') === 'landing_page') {
+        try {
+            $dbc = Database::getInstance();
+            $ci = $dbc->fetch("SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND COLUMN_NAME = 'channel'");
+            if ($ci && stripos($ci['COLUMN_TYPE'], 'enum') !== false && stripos($ci['COLUMN_TYPE'], 'landing_page') === false) {
+                $nt = str_replace(")", ",'landing_page')", $ci['COLUMN_TYPE']);
+                $dbc->query("ALTER TABLE orders MODIFY COLUMN channel $nt DEFAULT 'website'");
+            }
+        } catch (\Throwable $e) { /* ignore */ }
+    }
+
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         ob_end_clean();
         echo json_encode(['success' => false, 'message' => 'Method not allowed']);
