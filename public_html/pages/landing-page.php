@@ -861,21 +861,9 @@ foreach ($_lpFormFields as $_cf):
     if (_lpHasSelector) {
         var _oldPd = document.getElementById('lpFormProduct');
         if (_oldPd) _oldPd.style.display = 'none';
-        // Auto-select default or first product from selector
-        var defOpt = document.querySelector('#lpProdList .lp-prod-active');
-        if (!defOpt) {
-            defOpt = document.querySelector('#lpProdList .lp-prod-opt');
-            if (defOpt) lpPickProduct(defOpt);
-        }
-        if (defOpt) {
-            _lpSelProduct = parseInt(defOpt.dataset.pid) || null;
-            _lpSelQty = parseInt(defOpt.querySelector('.lp-qty-val')?.textContent) || 1;
-            var _initTot = document.getElementById('lpFormTotal');
-            if (_initTot) _initTot.style.display = 'block';
-            lpRecalcTotal();
-            lpLoadUpsells(_lpSelProduct, 'inline');
-        }
     }
+
+    // NOTE: Auto-select runs at bottom after all functions are defined (see _lpInit)
 
     // ── Product Selector Pick ──
     window.lpPickProduct = function(el) {
@@ -1294,9 +1282,22 @@ foreach ($_lpFormFields as $_cf):
             document.getElementById('order')?.scrollIntoView({behavior:'smooth'});
         }
 
+        function scrollToFormByIdx(idx) {
+            // Match by product index (for unlinked products)
+            var match = document.querySelector('#lpProdList .lp-prod-opt[data-idx="'+idx+'"]');
+            if (match) {
+                lpPickProduct(match);
+            }
+            document.getElementById('order')?.scrollIntoView({behavior:'smooth'});
+        }
+
         switch (LP_PCA) {
             case 'regular_checkout':
-                if (realProductId > 0) { openSitePopup(realProductId); }
+                // If LP has product selector, scroll to form instead of opening site checkout
+                if (_lpHasSelector && LP_CM === 'landing') {
+                    if (realProductId > 0) scrollToForm(realProductId);
+                    else scrollToFormByIdx(idx);
+                } else if (realProductId > 0) { openSitePopup(realProductId); }
                 else { ensureProductId(idx, function(pid){ openSitePopup(pid); }); }
                 break;
             case 'landing_popup':
@@ -1305,15 +1306,20 @@ foreach ($_lpFormFields as $_cf):
                 break;
             case 'scroll_to_order':
                 if (realProductId > 0) scrollToForm(realProductId);
+                else if (_lpHasSelector) scrollToFormByIdx(idx);
                 else ensureProductId(idx, function(pid){ scrollToForm(pid); });
                 break;
             case 'product_link':
                 var link = LP_P[idx]?.product_link;
                 if (link) window.location.href = link;
+                else if (_lpHasSelector) scrollToFormByIdx(idx);
                 else scrollToForm(realProductId);
                 break;
             default:
-                if (realProductId > 0) { openLpPopup(realProductId); }
+                if (_lpHasSelector && LP_CM === 'landing') {
+                    if (realProductId > 0) scrollToForm(realProductId);
+                    else scrollToFormByIdx(idx);
+                } else if (realProductId > 0) { openLpPopup(realProductId); }
                 else { ensureProductId(idx, function(pid){ openLpPopup(pid); }); }
                 break;
         }
@@ -1455,6 +1461,19 @@ foreach ($_lpFormFields as $_cf):
         document.addEventListener('touchend',function(){dr=false});
     });
 
+    // ═══ INIT: AUTO-SELECT PRODUCT IN SELECTOR ═══
+    if (_lpHasSelector) {
+        var defOpt = document.querySelector('#lpProdList .lp-prod-active');
+        if (!defOpt) {
+            defOpt = document.querySelector('#lpProdList .lp-prod-opt');
+        }
+        if (defOpt) {
+            lpPickProduct(defOpt);
+            var _initTot = document.getElementById('lpFormTotal');
+            if (_initTot) _initTot.style.display = 'block';
+        }
+    }
+
     // ═══ AUTO-ADD DEFAULT PRODUCT ON PAGE LOAD ═══
     // Only auto-add to cart when there's no inline form (hidden mode)
     if (LP_CM === 'hidden' && LP_DEF >= 0 && LP_P[LP_DEF]) {
@@ -1483,19 +1502,11 @@ foreach ($_lpFormFields as $_cf):
         }
     }
 
-    // Auto-populate inline form with default product (landing + regular modes)
-    if (LP_CM !== 'hidden' && LP_DEF >= 0 && LP_P[LP_DEF]) {
-        if (_lpHasSelector) {
-            // Product selector auto-init already happened above; just ensure total visible
-            if (_lpSelProduct) {
-                var totEl = document.getElementById('lpFormTotal');
-                if (totEl) totEl.style.display = 'block';
-            }
-        } else {
-            _lpSelProduct = LP_P[LP_DEF].real_product_id || null;
-            _lpSelQty = 1;
-            if (_lpSelProduct) lpUpdateFormProduct(_lpSelProduct, 1, 'inline');
-        }
+    // Auto-populate inline form with default product (landing + regular modes, no selector)
+    if (LP_CM !== 'hidden' && !_lpHasSelector && LP_DEF >= 0 && LP_P[LP_DEF]) {
+        _lpSelProduct = LP_P[LP_DEF].real_product_id || null;
+        _lpSelQty = 1;
+        if (_lpSelProduct) lpUpdateFormProduct(_lpSelProduct, 1, 'inline');
     }
 })();
 </script>
