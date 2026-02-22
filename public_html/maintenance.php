@@ -26,45 +26,137 @@ $isDark = ($gameType === 'space');
 <title><?= htmlspecialchars($siteName) ?> — রক্ষণাবেক্ষণ চলছে</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;min-height:100vh;overflow-x:hidden;
+html{height:100%;-webkit-text-size-adjust:100%}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;min-height:100%;min-height:100dvh;overflow-x:hidden;overflow-y:auto;
   background:<?= $isDark ? '#0b0f1a' : '#fef9ef' ?>;color:<?= $isDark ? '#e2e8f0' : '#3d2c1e' ?>}
-.wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:16px;position:relative;z-index:1}
-.logo-area{text-align:center;margin-bottom:12px}
+
+.wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;padding:24px 16px;position:relative;z-index:1;gap:0}
+.logo-area{text-align:center;margin-bottom:10px}
 .logo-area img{height:48px;border-radius:12px;padding:5px;background:<?= $isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.04)' ?>}
 .site-name{font-size:22px;font-weight:800;letter-spacing:-.5px;margin-top:6px;
   <?php if($isDark): ?>background:linear-gradient(135deg,#e2e8f0,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent<?php else: ?>color:#5b3a1a<?php endif; ?>}
-.badge{display:inline-block;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:10px;
+.badge{display:inline-block;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:8px;
   background:<?= $isDark ? 'rgba(239,68,68,.15)' : 'rgba(245,158,11,.12)' ?>;
   border:1px solid <?= $isDark ? 'rgba(239,68,68,.3)' : 'rgba(245,158,11,.3)' ?>;
   color:<?= $isDark ? '#fca5a5' : '#b45309' ?>}
-.message{font-size:14px;line-height:1.7;max-width:440px;text-align:center;margin-bottom:16px;color:<?= $isDark ? '#94a3b8' : '#78716c' ?>}
-.eta{font-size:12px;margin-bottom:8px;color:<?= $isDark ? '#64748b' : '#a8a29e' ?>}
-.game-box{border-radius:18px;padding:10px;width:100%;max-width:600px;
+.message{font-size:14px;line-height:1.6;max-width:440px;text-align:center;margin-bottom:14px;padding:0 8px;color:<?= $isDark ? '#94a3b8' : '#78716c' ?>}
+.eta{font-size:12px;margin-bottom:6px;color:<?= $isDark ? '#64748b' : '#a8a29e' ?>}
+
+/* Game Box */
+.game-box{border-radius:16px;padding:8px;width:100%;max-width:600px;
   background:<?= $isDark ? 'rgba(255,255,255,.04)' : '#fff' ?>;
   border:1px solid <?= $isDark ? 'rgba(255,255,255,.06)' : '#e7e5e4' ?>;
   <?php if(!$isDark): ?>box-shadow:0 4px 24px rgba(0,0,0,.06)<?php endif; ?>}
-.game-hud{display:flex;justify-content:space-between;align-items:center;padding:2px 8px 8px;font-size:13px;color:<?= $isDark ? '#64748b' : '#a8a29e' ?>}
-.game-hud .val{font-weight:800;font-size:15px;margin-left:4px;color:<?= $isDark ? '#fff' : '#3d2c1e' ?>}
-.canvas-wrap{position:relative;cursor:pointer;-webkit-tap-highlight-color:transparent}
-#gameCanvas{display:block;width:100%;border-radius:12px;background:<?= $isDark ? '#080c16' : '#f0fdf4' ?>}
-.g-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:12px;z-index:5;transition:opacity .3s;-webkit-tap-highlight-color:transparent}
+.game-hud{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 6px;font-size:12px;color:<?= $isDark ? '#64748b' : '#a8a29e' ?>}
+.game-hud .val{font-weight:800;font-size:14px;margin-left:3px;color:<?= $isDark ? '#fff' : '#3d2c1e' ?>}
+
+/* Canvas */
+.canvas-wrap{position:relative;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;border-radius:12px;overflow:hidden}
+#gameCanvas{display:block;width:100%;height:auto;border-radius:12px;background:<?= $isDark ? '#080c16' : '#f0fdf4' ?>}
+
+/* Overlays */
+.g-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:12px;z-index:5;transition:opacity .3s;-webkit-tap-highlight-color:transparent;padding:10px}
 .g-overlay.hidden{opacity:0;pointer-events:none}
 #startOverlay{background:<?= $isDark ? 'rgba(8,12,22,.8)' : 'rgba(240,253,244,.88)' ?>}
 #deadOverlay{background:<?= $isDark ? 'rgba(8,12,22,.85)' : 'rgba(254,249,239,.9)' ?>}
-.g-overlay .icon{font-size:40px;margin-bottom:6px;animation:bob 2s ease-in-out infinite}
-@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-.g-overlay .txt{font-size:15px;font-weight:700;color:<?= $isDark ? '#e2e8f0' : '#3d2c1e' ?>}
-.g-overlay .sub{font-size:11px;margin-top:3px;color:<?= $isDark ? '#94a3b8' : '#78716c' ?>;max-width:280px;text-align:center;line-height:1.4}
-.key-hint{display:inline-block;padding:3px 12px;border-radius:6px;font-size:12px;font-weight:700;margin-top:8px;
+.g-overlay .icon{font-size:36px;margin-bottom:4px;animation:bob 2s ease-in-out infinite;line-height:1}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+.g-overlay .txt{font-size:14px;font-weight:700;color:<?= $isDark ? '#e2e8f0' : '#3d2c1e' ?>}
+.g-overlay .sub{font-size:10px;margin-top:3px;color:<?= $isDark ? '#94a3b8' : '#78716c' ?>;max-width:260px;text-align:center;line-height:1.4}
+.key-hint{display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-top:6px;
   border:1px solid <?= $isDark ? '#475569' : '#d6d3d1' ?>;color:<?= $isDark ? '#e2e8f0' : '#57534e' ?>;
   background:<?= $isDark ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.03)' ?>;animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:.7}50%{opacity:1}}
-.restart-btn{margin-top:12px;padding:10px 28px;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:transform .15s;
+.restart-btn{margin-top:8px;padding:8px 22px;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:transform .15s;
   background:<?= $isDark ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'linear-gradient(135deg,#f59e0b,#f97316)' ?>;color:#fff}
-.restart-btn:hover{transform:scale(1.05)}
-.dead-score{font-size:28px;font-weight:900;margin:4px 0;color:<?= $isDark ? '#fff' : '#3d2c1e' ?>}
-.dead-best{font-size:12px;color:<?= $isDark ? '#94a3b8' : '#a8a29e' ?>}
-.footer-note{font-size:11px;margin-top:16px;text-align:center;color:<?= $isDark ? '#334155' : '#d6d3d1' ?>}
+.restart-btn:hover,.restart-btn:active{transform:scale(1.05)}
+.dead-score{font-size:24px;font-weight:900;margin:3px 0;color:<?= $isDark ? '#fff' : '#3d2c1e' ?>}
+.dead-best{font-size:11px;color:<?= $isDark ? '#94a3b8' : '#a8a29e' ?>}
+.footer-note{font-size:11px;margin-top:14px;text-align:center;color:<?= $isDark ? '#334155' : '#d6d3d1' ?>}
+
+/* ═══ MOBILE: Small phones (≤380px) ═══ */
+@media(max-width:380px){
+  .wrap{padding:12px 8px;justify-content:flex-start;padding-top:max(12px,env(safe-area-inset-top))}
+  .logo-area{margin-bottom:6px}
+  .logo-area img{height:36px;padding:3px}
+  .site-name{font-size:18px}
+  .badge{font-size:10px;padding:3px 10px;margin-bottom:5px}
+  .message{font-size:11px;line-height:1.5;margin-bottom:8px;padding:0 4px}
+  .eta{font-size:10px}
+  .game-box{padding:5px;border-radius:12px}
+  .game-hud{font-size:10px;padding:2px 4px 4px}
+  .game-hud .val{font-size:11px;margin-left:2px}
+  .canvas-wrap{border-radius:8px}
+  #gameCanvas{border-radius:8px}
+  .g-overlay{padding:6px;border-radius:8px}
+  .g-overlay .icon{font-size:24px;margin-bottom:2px}
+  .g-overlay .txt{font-size:11px}
+  .g-overlay .sub{font-size:8px;max-width:200px}
+  .key-hint{font-size:9px;padding:2px 8px;margin-top:4px}
+  .restart-btn{padding:6px 18px;font-size:11px;margin-top:5px;border-radius:8px}
+  .dead-score{font-size:18px}
+  .dead-best{font-size:9px}
+  .footer-note{font-size:9px;margin-top:8px}
+}
+
+/* ═══ MOBILE: Regular phones (381-480px) ═══ */
+@media(min-width:381px) and (max-width:480px){
+  .wrap{padding:14px 10px}
+  .logo-area img{height:40px}
+  .site-name{font-size:19px}
+  .message{font-size:12px;margin-bottom:10px}
+  .game-box{padding:6px;border-radius:14px}
+  .game-hud{font-size:11px;padding:2px 5px 5px}
+  .game-hud .val{font-size:12px}
+  .g-overlay .icon{font-size:28px}
+  .g-overlay .txt{font-size:12px}
+  .g-overlay .sub{font-size:9px}
+  .key-hint{font-size:10px}
+  .restart-btn{padding:7px 20px;font-size:12px}
+  .dead-score{font-size:20px}
+}
+
+/* ═══ MOBILE: Landscape ═══ */
+@media(max-height:420px) and (orientation:landscape){
+  .wrap{padding:8px 16px;flex-direction:row;flex-wrap:wrap;justify-content:center;gap:8px}
+  .logo-area{margin-bottom:0;width:100%;display:flex;align-items:center;justify-content:center;gap:10px}
+  .logo-area img{height:28px}
+  .site-name{font-size:16px;margin-top:0}
+  .badge{margin-bottom:0;font-size:10px}
+  .message{font-size:11px;margin-bottom:4px;max-width:100%}
+  .eta{margin-bottom:2px}
+  .game-box{max-width:500px;padding:4px}
+  .game-hud{padding:1px 4px 3px;font-size:10px}
+  .game-hud .val{font-size:11px}
+  .g-overlay .icon{font-size:22px;margin-bottom:2px}
+  .g-overlay .txt{font-size:11px}
+  .g-overlay .sub{font-size:8px;margin-top:1px}
+  .key-hint{margin-top:3px;font-size:9px;padding:2px 6px}
+  .restart-btn{margin-top:4px;padding:5px 16px;font-size:10px}
+  .dead-score{font-size:16px;margin:1px 0}
+  .footer-note{display:none}
+}
+
+/* ═══ Short viewport (e.g. older iPhones, keyboard open) ═══ */
+@media(max-height:560px) and (orientation:portrait){
+  .wrap{justify-content:flex-start;padding-top:10px}
+  .logo-area{margin-bottom:4px}
+  .logo-area img{height:32px}
+  .site-name{font-size:17px}
+  .badge{margin-bottom:4px}
+  .message{font-size:11px;margin-bottom:6px;line-height:1.4}
+  .footer-note{margin-top:6px}
+}
+
+/* ═══ Tablet/Desktop ═══ */
+@media(min-width:768px){
+  .wrap{padding:32px 24px}
+  .site-name{font-size:26px}
+  .message{font-size:15px}
+  .game-box{padding:12px}
+  .game-hud{font-size:14px;padding:4px 10px 10px}
+  .game-hud .val{font-size:16px}
+}
 
 <?php if($isDark): ?>
 .stars-layer{position:fixed;inset:0;pointer-events:none;z-index:0}
@@ -126,22 +218,21 @@ body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;min-height:100vh;
                 <div class="txt"><?= $isDark ? 'স্পেস রানার' : 'বানানা জাম্প' ?></div>
                 <div class="sub">
                     <?php if($isDark): ?>
-                    বাধা এড়িয়ে যতদূর সম্ভব উড়ুন!<br>🕹️ SPACE / TAP = জাম্প (ডবল জাম্প সাপোর্ট)
+                    বাধা এড়িয়ে যতদূর সম্ভব উড়ুন!<br>🕹️ জাম্প করুন (ডবল জাম্প সাপোর্ট)
                     <?php else: ?>
-                    বাধা এড়ান, কলা সংগ্রহ করুন!<br>🕹️ SPACE / TAP = জাম্প (ডবল জাম্প সাপোর্ট)
+                    বাধা এড়ান, কলা সংগ্রহ করুন!<br>🕹️ জাম্প করুন (ডবল জাম্প সাপোর্ট)
                     <?php endif; ?>
                 </div>
-                <div class="key-hint">▶ শুরু করতে SPACE চাপুন বা TAP করুন</div>
+                <div class="key-hint" id="startHint">▶ শুরু করতে TAP করুন</div>
             </div>
 
             <!-- Game Over Screen -->
             <div class="g-overlay hidden" id="deadOverlay">
-                <div style="font-size:32px">💥</div>
+                <div style="font-size:28px;line-height:1">💥</div>
                 <div class="txt">গেম ওভার!</div>
                 <div class="dead-score" id="deadScore">0</div>
                 <div class="dead-best" id="deadBest">সেরা: 0</div>
                 <button class="restart-btn" id="restartBtn">🔄 আবার খেলুন</button>
-                <div class="key-hint" style="margin-top:6px;animation:none">SPACE / TAP</div>
             </div>
         </div>
     </div>
@@ -160,9 +251,10 @@ cvs.width = W; cvs.height = H;
 
 function fitCanvas(){
     var p = cvs.parentElement;
-    var s = Math.min(1, (p.clientWidth - 20) / W);
-    cvs.style.width = (W*s)+'px';
-    cvs.style.height = (H*s)+'px';
+    var maxW = p.clientWidth - (window.innerWidth <= 380 ? 4 : 10);
+    var s = Math.min(1, maxW / W);
+    cvs.style.width = Math.floor(W*s)+'px';
+    cvs.style.height = Math.floor(H*s)+'px';
 }
 fitCanvas();
 window.addEventListener('resize', fitCanvas);
@@ -570,6 +662,16 @@ if(GAME === 'space'){
         }
     }
 }
+
+// ─── Device-aware hints ───
+var isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+var hintEl = document.getElementById('startHint');
+if(hintEl){
+    hintEl.textContent = isTouchDevice ? '👆 শুরু করতে TAP করুন' : '▶ শুরু করতে SPACE চাপুন';
+}
+
+// Handle orientation change
+window.addEventListener('orientationchange', function(){ setTimeout(fitCanvas, 100); });
 
 // ─── GAME LOOP ───
 function gameLoop(){
