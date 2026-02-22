@@ -2,6 +2,10 @@
 require_once __DIR__ . '/../../includes/session.php';
 $pageTitle = 'Settings';
 require_once __DIR__ . '/../includes/auth.php';
+// Load FB CAPI for ads tab
+if (file_exists(__DIR__ . '/../../includes/fb-capi.php')) {
+    require_once __DIR__ . '/../../includes/fb-capi.php';
+}
 
 $db = Database::getInstance();
 
@@ -95,6 +99,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $checkboxMap = [
         'general' => [],
         'advanced' => ['maintenance_mode'],
+        'ads' => [
+            'fb_cs_evt_pageview','fb_cs_evt_viewcontent','fb_cs_evt_addtocart','fb_cs_evt_initiatecheckout',
+            'fb_cs_evt_purchase','fb_cs_evt_search','fb_cs_evt_lead','fb_cs_evt_completeregistration','fb_cs_evt_contact',
+            'fb_ss_evt_pageview','fb_ss_evt_viewcontent','fb_ss_evt_addtocart','fb_ss_evt_initiatecheckout',
+            'fb_ss_evt_purchase','fb_ss_evt_search','fb_ss_evt_lead','fb_ss_evt_completeregistration','fb_ss_evt_contact',
+            'fb_event_logging','fb_advanced_matching',
+        ],
         'shipping' => ['auto_detect_location'],
         'checkout' => ['checkout_note_enabled'],
         'email' => ['smtp_enabled'],
@@ -153,6 +164,7 @@ require_once __DIR__ . '/../includes/header.php';
                 'shipping' => ['Shipping', 'fa-truck'],
                 'social' => ['Social & Contact', 'fa-share-alt'],
                 'tracking' => ['Tracking & Pixels', 'fa-chart-bar'],
+                'ads' => ['Ads Tracking', 'fa-bullhorn'],
                 'checkout' => ['Checkout & Labels', 'fa-shopping-cart'],
                 'registration' => ['Registration Fields', 'fa-user-plus'],
                 'seo' => ['SEO & Meta', 'fa-search'],
@@ -1218,6 +1230,257 @@ require_once __DIR__ . '/../includes/header.php';
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Custom Footer Code</label>
                     <textarea name="custom_footer_code" rows="4" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono"><?= e($s['custom_footer_code'] ?? '') ?></textarea></div>
             </div>
+
+            <?php elseif ($tab === 'ads'): ?>
+            <?php
+            // Event definitions
+            $fbEvents = [
+                'PageView'             => ['label'=>'PageView',             'icon'=>'👁️', 'desc'=>'প্রতিটি পেজ ভিজিটে ফায়ার হয়'],
+                'ViewContent'          => ['label'=>'ViewContent',          'icon'=>'🛍️', 'desc'=>'প্রোডাক্ট পেজ দেখলে ফায়ার হয়'],
+                'AddToCart'            => ['label'=>'AddToCart',            'icon'=>'🛒', 'desc'=>'কার্টে যোগ করলে ফায়ার হয়'],
+                'InitiateCheckout'     => ['label'=>'InitiateCheckout',     'icon'=>'💳', 'desc'=>'চেকআউট শুরু করলে ফায়ার হয়'],
+                'Purchase'             => ['label'=>'Purchase',             'icon'=>'✅', 'desc'=>'অর্ডার সফল হলে ফায়ার হয় (সবচেয়ে গুরুত্বপূর্ণ)'],
+                'Search'               => ['label'=>'Search',              'icon'=>'🔍', 'desc'=>'সার্চ করলে ফায়ার হয়'],
+                'Lead'                 => ['label'=>'Lead',                'icon'=>'📋', 'desc'=>'কন্টাক্ট ফর্ম সাবমিট করলে'],
+                'CompleteRegistration' => ['label'=>'CompleteRegistration', 'icon'=>'📝', 'desc'=>'রেজিস্ট্রেশন সম্পন্ন হলে'],
+                'Contact'              => ['label'=>'Contact',             'icon'=>'📞', 'desc'=>'কন্টাক্ট বাটনে ক্লিক করলে'],
+            ];
+            ?>
+
+            <!-- ═══ CREDENTIALS ═══ -->
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-5">
+                <div class="flex items-center justify-between">
+                    <h4 class="font-semibold text-gray-800"><i class="fab fa-facebook mr-2 text-blue-600"></i>Facebook Pixel & Conversions API</h4>
+                    <?php if (fbGetPixelId() && getSetting('fb_access_token','')): ?>
+                    <span class="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full font-semibold">✅ কানেক্টেড</span>
+                    <?php else: ?>
+                    <span class="text-xs bg-red-100 text-red-600 px-3 py-1 rounded-full font-semibold">❌ সেটআপ করুন</span>
+                    <?php endif; ?>
+                </div>
+
+                <div class="p-4 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 space-y-1">
+                    <p><strong>📌 সেটআপ গাইড:</strong></p>
+                    <p>1. <a href="https://business.facebook.com/events_manager" target="_blank" class="underline font-semibold">Events Manager</a> → আপনার Pixel সিলেক্ট করুন</p>
+                    <p>2. Settings → <strong>Conversions API</strong> → Generate Access Token</p>
+                    <p>3. নিচে Pixel ID ও Access Token বসান, তারপর "🧪 Test" বাটনে ক্লিক করে verify করুন</p>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Facebook Pixel ID <span class="text-red-500">*</span></label>
+                        <input type="text" name="fb_pixel_id" value="<?= e($s['fb_pixel_id'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono" placeholder="123456789012345">
+                        <p class="text-xs text-gray-400 mt-1">Events Manager → Data Sources → Pixel → Pixel ID</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Access Token (CAPI) <span class="text-red-500">*</span></label>
+                        <div class="relative">
+                            <input type="password" name="fb_access_token" id="fbAccessToken" value="<?= e($s['fb_access_token'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono pr-10" placeholder="EAAxxxxxxx...">
+                            <button type="button" onclick="var el=document.getElementById('fbAccessToken');el.type=el.type==='password'?'text':'password'" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"><i class="fas fa-eye"></i></button>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1">Events Manager → Settings → Conversions API → Generate Token</p>
+                    </div>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Test Event Code (ঐচ্ছিক)</label>
+                        <input type="text" name="fb_test_event_code" value="<?= e($s['fb_test_event_code'] ?? '') ?>" class="w-full px-3 py-2.5 border rounded-lg text-sm font-mono" placeholder="TEST12345">
+                        <p class="text-xs text-gray-400 mt-1">Events Manager → Test Events → Test Code লিখুন। Production-এ খালি রাখুন।</p>
+                    </div>
+                    <div class="flex items-end gap-2">
+                        <button type="button" id="fbTestBtn" onclick="testFbCapi()" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+                            <i class="fas fa-flask mr-1"></i> 🧪 Test Connection
+                        </button>
+                        <div id="fbTestResult" class="text-xs flex-1 hidden p-2 rounded-lg"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ CLIENT-SIDE (Browser Pixel) EVENTS ═══ -->
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <div class="flex items-center gap-2 mb-1">
+                    <h4 class="font-semibold text-gray-800"><i class="fas fa-desktop mr-2 text-purple-500"></i>Client-Side Events (Browser Pixel)</h4>
+                    <span class="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold">fbq()</span>
+                </div>
+                <p class="text-xs text-gray-500">ব্রাউজারে Facebook Pixel এর মাধ্যমে ফায়ার হয়। ভিজিটরের ব্রাউজারে চলে।</p>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <?php foreach ($fbEvents as $evKey => $evInfo): ?>
+                    <label class="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition group">
+                        <input type="hidden" name="fb_cs_evt_<?= strtolower($evKey) ?>" value="0">
+                        <input type="checkbox" name="fb_cs_evt_<?= strtolower($evKey) ?>" value="1" class="mt-0.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                            <?= ($s['fb_cs_evt_' . strtolower($evKey)] ?? '1') === '1' ? 'checked' : '' ?>>
+                        <div class="min-w-0">
+                            <div class="text-sm font-semibold text-gray-800"><?= $evInfo['icon'] ?> <?= $evInfo['label'] ?></div>
+                            <div class="text-[10px] text-gray-400 leading-tight mt-0.5"><?= $evInfo['desc'] ?></div>
+                        </div>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <!-- ═══ SERVER-SIDE (CAPI) EVENTS ═══ -->
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <div class="flex items-center gap-2 mb-1">
+                    <h4 class="font-semibold text-gray-800"><i class="fas fa-server mr-2 text-green-600"></i>Server-Side Events (Conversions API)</h4>
+                    <span class="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">CAPI</span>
+                </div>
+                <p class="text-xs text-gray-500">সার্ভার থেকে সরাসরি Facebook-এ পাঠানো হয়। Ad Blocker বাইপাস করে, ডেটা ক্ষতি কমায়।</p>
+
+                <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                    <strong>⚠️ গুরুত্বপূর্ণ:</strong> সর্বোচ্চ ট্র্যাকিং পেতে Client + Server দুটোই চালু রাখুন। Facebook স্বয়ংক্রিয়ভাবে event_id দিয়ে ডুপ্লিকেট বাদ দেবে (Deduplication)।
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <?php foreach ($fbEvents as $evKey => $evInfo): ?>
+                    <label class="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition group">
+                        <input type="hidden" name="fb_ss_evt_<?= strtolower($evKey) ?>" value="0">
+                        <input type="checkbox" name="fb_ss_evt_<?= strtolower($evKey) ?>" value="1" class="mt-0.5 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                            <?= ($s['fb_ss_evt_' . strtolower($evKey)] ?? '1') === '1' ? 'checked' : '' ?>>
+                        <div class="min-w-0">
+                            <div class="text-sm font-semibold text-gray-800"><?= $evInfo['icon'] ?> <?= $evInfo['label'] ?></div>
+                            <div class="text-[10px] text-gray-400 leading-tight mt-0.5"><?= $evInfo['desc'] ?></div>
+                        </div>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <!-- ═══ ADVANCED OPTIONS ═══ -->
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <h4 class="font-semibold text-gray-800"><i class="fas fa-cogs mr-2 text-gray-500"></i>Advanced Settings</h4>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <label class="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <input type="hidden" name="fb_advanced_matching" value="0">
+                        <input type="checkbox" name="fb_advanced_matching" value="1" class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            <?= ($s['fb_advanced_matching'] ?? '1') === '1' ? 'checked' : '' ?>>
+                        <div>
+                            <div class="text-sm font-semibold text-gray-800">🎯 Advanced Matching</div>
+                            <div class="text-[10px] text-gray-400">Hashed email/phone পিক্সেলে পাঠায়। Match rate বাড়ায়।</div>
+                        </div>
+                    </label>
+                    <label class="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <input type="hidden" name="fb_event_logging" value="0">
+                        <input type="checkbox" name="fb_event_logging" value="1" class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            <?= ($s['fb_event_logging'] ?? '0') === '1' ? 'checked' : '' ?>>
+                        <div>
+                            <div class="text-sm font-semibold text-gray-800">📝 Event Logging</div>
+                            <div class="text-[10px] text-gray-400">সব CAPI ইভেন্ট log ফাইলে রেকর্ড করে। Debug-এ কাজে লাগে।</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- ═══ EVENT VERIFICATION MATRIX ═══ -->
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h4 class="font-semibold text-gray-800"><i class="fas fa-clipboard-check mr-2 text-emerald-500"></i>Event Status Overview</h4>
+                    <span class="text-[10px] text-gray-400">Client + Server event_id দিয়ে ডুপ্লিকেশন বাদ হয়</span>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b">
+                                <th class="text-left py-2 px-2 text-xs text-gray-500 font-semibold">Event</th>
+                                <th class="text-center py-2 px-2 text-xs text-purple-600 font-semibold"><i class="fas fa-desktop mr-1"></i>Client</th>
+                                <th class="text-center py-2 px-2 text-xs text-green-600 font-semibold"><i class="fas fa-server mr-1"></i>Server</th>
+                                <th class="text-left py-2 px-2 text-xs text-gray-500 font-semibold">Trigger Point</th>
+                                <th class="text-left py-2 px-2 text-xs text-gray-500 font-semibold">Data Sent</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-xs">
+                            <?php
+                            $triggerMap = [
+                                'PageView' => ['trigger'=>'প্রতিটি পেজ লোড', 'data'=>'URL, Referrer, fbp, fbc'],
+                                'ViewContent' => ['trigger'=>'প্রোডাক্ট পেজ ভিজিট', 'data'=>'product_id, name, price, category'],
+                                'AddToCart' => ['trigger'=>'কার্টে যোগ', 'data'=>'product_id, name, price, quantity'],
+                                'InitiateCheckout' => ['trigger'=>'চেকআউট ফর্ম ওপেন', 'data'=>'cart_value, num_items, content_ids'],
+                                'Purchase' => ['trigger'=>'অর্ডার সফল (createOrder)', 'data'=>'order_id, total, items, phone, email, city'],
+                                'Search' => ['trigger'=>'সার্চ করলে', 'data'=>'search_string'],
+                                'Lead' => ['trigger'=>'কন্টাক্ট ফর্ম', 'data'=>'name, phone, email'],
+                                'CompleteRegistration' => ['trigger'=>'রেজিস্ট্রেশন সম্পন্ন', 'data'=>'name, phone, email'],
+                                'Contact' => ['trigger'=>'কন্টাক্ট বাটন ক্লিক', 'data'=>'content_name'],
+                            ];
+                            foreach ($fbEvents as $evKey => $evInfo):
+                                $csOn = ($s['fb_cs_evt_' . strtolower($evKey)] ?? '1') === '1';
+                                $ssOn = ($s['fb_ss_evt_' . strtolower($evKey)] ?? '1') === '1';
+                                $trig = $triggerMap[$evKey] ?? ['trigger'=>'—','data'=>'—'];
+                            ?>
+                            <tr class="border-b hover:bg-gray-50">
+                                <td class="py-2 px-2 font-semibold text-gray-700"><?= $evInfo['icon'] ?> <?= $evInfo['label'] ?></td>
+                                <td class="py-2 px-2 text-center"><?= $csOn ? '<span class="text-green-600 font-bold">✅</span>' : '<span class="text-red-400">❌</span>' ?></td>
+                                <td class="py-2 px-2 text-center"><?= $ssOn ? '<span class="text-green-600 font-bold">✅</span>' : '<span class="text-red-400">❌</span>' ?></td>
+                                <td class="py-2 px-2 text-gray-500"><?= $trig['trigger'] ?></td>
+                                <td class="py-2 px-2 text-gray-400 max-w-[200px] truncate" title="<?= $trig['data'] ?>"><?= $trig['data'] ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="p-3 bg-gray-50 border rounded-lg text-xs text-gray-500 space-y-1">
+                    <p>🔄 <strong>Deduplication:</strong> প্রতিটি ইভেন্টে একটি unique <code class="bg-white px-1 rounded">event_id</code> থাকে। Client ও Server থেকে একই ID পাঠালে Facebook একবারই count করে।</p>
+                    <p>🛡️ <strong>User Data Hashing:</strong> Phone, Email, Name সব SHA-256 hash করে পাঠানো হয়। Raw data Facebook-এ যায় না।</p>
+                    <p>🌐 <strong>Server-Side (CAPI):</strong> Ad Blocker থাকলেও কাজ করে, iOS 14+ restrictions বাইপাস করে। <strong>Purchase ইভেন্ট অবশ্যই সার্ভার-সাইড থেকে পাঠানো উচিত।</strong></p>
+                </div>
+            </div>
+
+            <!-- ═══ LOGS ═══ -->
+            <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h4 class="font-semibold text-gray-800"><i class="fas fa-terminal mr-2 text-gray-500"></i>CAPI Event Logs</h4>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="loadFbLogs()" class="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-semibold hover:bg-gray-200"><i class="fas fa-sync-alt mr-1"></i>Load Logs</button>
+                        <button type="button" onclick="clearFbLogs()" class="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-semibold hover:bg-red-100"><i class="fas fa-trash mr-1"></i>Clear</button>
+                    </div>
+                </div>
+                <pre id="fbLogs" class="bg-gray-900 text-green-400 text-[10px] rounded-lg p-4 overflow-x-auto max-h-60 font-mono leading-relaxed">(Click "Load Logs" to view recent CAPI events)</pre>
+            </div>
+
+            <script>
+            async function testFbCapi(){
+                const btn = document.getElementById('fbTestBtn');
+                const res = document.getElementById('fbTestResult');
+                btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Testing...';
+                res.classList.remove('hidden','bg-green-100','bg-red-100','text-green-700','text-red-700');
+                try {
+                    const r = await fetch('/api/fb-test.php', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'action=test'});
+                    const d = await r.json();
+                    if(d.success){
+                        res.className = 'text-xs flex-1 p-2 rounded-lg bg-green-100 text-green-700';
+                        res.innerHTML = '✅ <strong>সফল!</strong> Events received: '+d.events_received+'<br>Event ID: <code>'+d.event_id+'</code>'+(d.test_code?'<br>Test Code: '+d.test_code:'');
+                    } else {
+                        res.className = 'text-xs flex-1 p-2 rounded-lg bg-red-100 text-red-700';
+                        res.innerHTML = '❌ <strong>ব্যর্থ:</strong> '+(d.error||'Unknown error')+'<br>HTTP: '+(d.http_code||'—');
+                    }
+                    res.classList.remove('hidden');
+                } catch(e){
+                    res.className = 'text-xs flex-1 p-2 rounded-lg bg-red-100 text-red-700';
+                    res.innerHTML = '❌ Network error: '+e.message;
+                    res.classList.remove('hidden');
+                }
+                btn.disabled = false; btn.innerHTML = '<i class="fas fa-flask mr-1"></i> 🧪 Test Connection';
+            }
+            async function loadFbLogs(){
+                const el = document.getElementById('fbLogs');
+                el.textContent = 'Loading...';
+                try {
+                    const r = await fetch('/api/fb-test.php?action=logs');
+                    const d = await r.json();
+                    el.textContent = d.logs || '(empty)';
+                    if(d.total_lines) el.textContent += '\n\n— Showing last 50 of '+d.total_lines+' entries —';
+                } catch(e){ el.textContent = 'Error: '+e.message; }
+            }
+            async function clearFbLogs(){
+                if(!confirm('সব CAPI logs মুছে ফেলবেন?')) return;
+                try {
+                    await fetch('/api/fb-test.php', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'action=clear_logs'});
+                    document.getElementById('fbLogs').textContent = '(Logs cleared)';
+                } catch(e){}
+            }
+            </script>
 
             <?php elseif ($tab === 'checkout'): ?>
             <div class="bg-white rounded-xl shadow-sm border p-5 space-y-4">

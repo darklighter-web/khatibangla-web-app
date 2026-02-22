@@ -44,6 +44,22 @@ if ($query) {
 $pagination = paginate($total, $page, $perPage, url("search?q=" . urlencode($query) . "&sort=$sort"));
 
 require_once __DIR__ . '/../includes/header.php';
+
+// ── FB Search tracking ──
+if ($query) {
+    $__srEid = null;
+    try {
+        if (file_exists(__DIR__ . '/../includes/fb-capi.php')) {
+            require_once __DIR__ . '/../includes/fb-capi.php';
+            if (fbCapiEnabled()) { $__srEid = fbEventId(); fbTrackSearch($query, $__srEid); }
+        }
+    } catch (\Throwable $e) {}
+    $__fbPxId = getSetting('fb_pixel_id', '') ?: getSetting('facebook_pixel_id', '') ?: getSetting('facebook_pixel', '');
+    $__csSearch = !function_exists('fbPixelEventEnabled') || fbPixelEventEnabled('Search');
+    if ($__fbPxId && $__csSearch): ?>
+    <script>if(typeof _fbTrack==='function') _fbTrack('Search',{search_string:<?= json_encode($query) ?>,content_type:'product'}<?= $__srEid ? ",'{$__srEid}'" : '' ?>);</script>
+    <?php endif;
+}
 ?>
 
 <div class="max-w-6xl mx-auto px-4 py-6">

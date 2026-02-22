@@ -1054,6 +1054,30 @@ function createOrder($data) {
     
     _creditLog("ORDER COMPLETE: #{$orderNumber}, total={$total}, creditUsed={$storeCreditUsed}, creditsDeducted={$creditsDeducted}, merged=" . ($isMerged ? 'yes' : 'no'));
     
+    // ── Fire Facebook CAPI Purchase Event ──
+    try {
+        if (file_exists(__DIR__ . '/fb-capi.php')) {
+            require_once __DIR__ . '/fb-capi.php';
+            if (fbCapiEnabled()) {
+                $__fbItems = $db->fetchAll("SELECT oi.product_id, oi.product_name, oi.quantity, oi.price FROM order_items oi WHERE oi.order_id = ?", [$orderId]);
+                $__fbEventId = fbEventId();
+                fbTrackPurchase([
+                    'order_number' => $orderNumber,
+                    'total'        => $isMerged ? $newTotal : $total,
+                    'items'        => $__fbItems,
+                    'email'        => $data['email'] ?? '',
+                    'phone'        => $data['phone'] ?? '',
+                    'name'         => $data['name'] ?? '',
+                    'city'         => $data['city'] ?? '',
+                    'district'     => $data['district'] ?? '',
+                ], $__fbEventId);
+            }
+        }
+    } catch (\Throwable $e) {
+        // Never break order flow for tracking
+        error_log('FB CAPI Purchase error: ' . $e->getMessage());
+    }
+    
     return [
         'success' => true,
         'order_id' => $orderId,
@@ -1062,6 +1086,7 @@ function createOrder($data) {
         'merged' => $isMerged,
         'credit_used_tk' => $storeCreditUsed,
         'credits_deducted' => $creditsDeducted,
+        'fb_event_id' => $__fbEventId ?? null,
         'message' => $isMerged 
             ? "আপনার পণ্যগুলো পূর্ববর্তী অর্ডার #{$orderNumber}-এ যোগ হয়েছে!" 
             : 'Order placed successfully!',

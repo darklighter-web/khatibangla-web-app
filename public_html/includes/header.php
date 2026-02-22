@@ -307,18 +307,67 @@ $_autoDesc = seoAutoDescription($seo);
     <?php endif; ?>
     
     <?php 
-    $fbPixel = getSetting('facebook_pixel');
-    if ($fbPixel): ?>
+    // ── Facebook Pixel + Server-Side CAPI ──
+    $__fbPixelId = getSetting('fb_pixel_id', '') ?: getSetting('facebook_pixel_id', '') ?: getSetting('facebook_pixel', '');
+    if ($__fbPixelId):
+        // Load CAPI engine
+        if (file_exists(__DIR__ . '/fb-capi.php')) require_once __DIR__ . '/fb-capi.php';
+        
+        // Generate PageView event_id for deduplication
+        $__pvEventId = function_exists('fbEventId') ? fbEventId() : ('evt_' . bin2hex(random_bytes(12)));
+        
+        // Advanced matching data
+        $__amEnabled = getSetting('fb_advanced_matching', '1') === '1';
+        $__amData = [];
+        if ($__amEnabled) {
+            if (!empty($_SESSION['customer_phone'])) {
+                $ph = preg_replace('/[^0-9]/', '', $_SESSION['customer_phone']);
+                if (strlen($ph) === 11 && str_starts_with($ph, '0')) $ph = '880' . substr($ph, 1);
+                $__amData['ph'] = hash('sha256', $ph);
+            }
+            if (!empty($_SESSION['customer_email'])) {
+                $__amData['em'] = hash('sha256', strtolower(trim($_SESSION['customer_email'])));
+            }
+            if (!empty($_SESSION['customer_name'])) {
+                $parts = preg_split('/\s+/', trim($_SESSION['customer_name']), 2);
+                $__amData['fn'] = hash('sha256', strtolower($parts[0]));
+                if (isset($parts[1])) $__amData['ln'] = hash('sha256', strtolower($parts[1]));
+            }
+            $__amData['country'] = hash('sha256', 'bd');
+        }
+        
+        // Check if client PageView is enabled
+        $__csPageView = !function_exists('fbPixelEventEnabled') || fbPixelEventEnabled('PageView');
+    ?>
     <script>
         !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
         n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
         n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
         t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
         document,'script','https://connect.facebook.net/en_US/fbevents.js');
-        fbq('init', '<?= $fbPixel ?>');
-        fbq('track', 'PageView');
+        <?php if ($__amEnabled && !empty($__amData)): ?>
+        fbq('init', '<?= $__fbPixelId ?>', <?= json_encode($__amData) ?>);
+        <?php else: ?>
+        fbq('init', '<?= $__fbPixelId ?>');
+        <?php endif; ?>
+        <?php if ($__csPageView): ?>
+        fbq('track', 'PageView', {}, {eventID: '<?= $__pvEventId ?>'});
+        <?php endif; ?>
+        
+        // Helper: fire client event with dedup ID and optional server-side mirror
+        window._fbTrack = function(event, data, eventId) {
+            eventId = eventId || 'evt_' + Math.random().toString(36).substr(2,24);
+            if(typeof fbq === 'function') fbq('track', event, data || {}, {eventID: eventId});
+            return eventId;
+        };
     </script>
-    <?php endif; ?>
+    <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=<?= $__fbPixelId ?>&ev=PageView&noscript=1"></noscript>
+    <?php
+        // Fire server-side PageView (non-blocking for page load)
+        if (function_exists('fbCapiEnabled') && fbCapiEnabled()) {
+            try { fbTrackPageView($__pvEventId); } catch (\Throwable $e) {}
+        }
+    endif; ?>
 
     <!-- Anti-Inspect / DevTools Protection -->
     <script>

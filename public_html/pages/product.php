@@ -62,6 +62,25 @@ $seo = [
 
 include ROOT_PATH . 'includes/header.php';
 
+// ── FB ViewContent tracking ──
+$__vcEventId = null;
+try {
+    if (file_exists(ROOT_PATH . 'includes/fb-capi.php')) {
+        require_once ROOT_PATH . 'includes/fb-capi.php';
+        if (fbCapiEnabled()) {
+            $__vcEventId = fbEventId();
+            fbTrackViewContent($product, $__vcEventId);
+        }
+    }
+} catch (\Throwable $e) {}
+$__vcPrice = floatval($product['sale_price'] ?? $product['regular_price'] ?? 0);
+$__vcEnabled = !function_exists('fbPixelEventEnabled') || fbPixelEventEnabled('ViewContent');
+if ($__vcEnabled && !empty(getSetting('fb_pixel_id', '') ?: getSetting('facebook_pixel_id', '') ?: getSetting('facebook_pixel', ''))): ?>
+<script>
+if(typeof _fbTrack==='function') _fbTrack('ViewContent',{content_ids:['<?= $product['id'] ?>'],content_type:'product',content_name:<?= json_encode($product['name_bn'] ?? $product['name'] ?? '') ?>,value:<?= $__vcPrice ?>,currency:'BDT'}<?= $__vcEventId ? ",'{$__vcEventId}'" : '' ?>);
+</script>
+<?php endif;
+
 $btnOrderLabel = getSetting('btn_order_cod_label', 'ক্যাশ অন ডেলিভারিতে অর্ডার করুন');
 $btnAddLabel = getSetting('btn_add_to_cart_label', 'কার্টে যোগ করুন');
 $btnBuyLabel = getSetting('btn_buy_now_label', 'এখনই কিনুন');

@@ -858,6 +858,10 @@ function openCheckoutPopup(productId, qty, variantId, customerUpload) {
         .then(data => {
             if (data.success) {
                 document.querySelectorAll('.cart-count').forEach(el => el.textContent = data.cart_count);
+                // ── FB AddToCart (client, dedup with server) ──
+                try {
+                    if(typeof _fbTrack==='function') _fbTrack('AddToCart',{content_ids:[''+productId],content_type:'product',value:parseFloat(data.cart_total)||0,currency:'BDT',num_items:parseInt(data.cart_count)||1},data.fb_event_id||null);
+                } catch(e){}
             }
             showCheckoutModal();
         });
@@ -976,6 +980,14 @@ function showCheckoutModal() {
         
         // Track incomplete order
         trackIncomplete('cart', data);
+        
+        // ── FB InitiateCheckout ──
+        try {
+            if(typeof _fbTrack === 'function') {
+                var cIds = data.items.map(function(i){return ''+i.product_id;});
+                _fbTrack('InitiateCheckout', {content_ids:cIds, content_type:'product', value:parseFloat(data.total)||0, currency:'BDT', num_items:data.items.length});
+            }
+        } catch(e){}
     });
 }
 
@@ -1664,6 +1676,19 @@ document.getElementById('checkout-form')?.addEventListener('submit', function(e)
         
         if (data.success) {
             console.log('[ORDER SUCCESS] credit_used_tk=' + (data.credit_used_tk || 0) + ', credits_deducted=' + (data.credits_deducted || 0));
+            
+            // ── FB Purchase Event (client-side, dedup with server) ──
+            try {
+                if(typeof _fbTrack === 'function') {
+                    _fbTrack('Purchase', {
+                        value: parseFloat(data.total) || 0,
+                        currency: 'BDT',
+                        content_type: 'product',
+                        order_id: data.order_number || ''
+                    }, data.fb_event_id || null);
+                }
+            } catch(e){ console.warn('FB Purchase pixel error:', e); }
+            
             document.getElementById('checkout-form').classList.add('hidden');
             document.getElementById('checkout-success').classList.remove('hidden');
             document.getElementById('success-order-number').textContent = data.order_number;

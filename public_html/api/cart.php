@@ -194,11 +194,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             if (addToCart($productId, $quantity, $variantId, $customerUpload)) {
+                // Server-side AddToCart
+                $__fbAtcEid = null;
+                try {
+                    if (file_exists(__DIR__ . '/../includes/fb-capi.php')) {
+                        require_once __DIR__ . '/../includes/fb-capi.php';
+                        if (fbCapiEnabled()) {
+                            $__prod = getProduct($productId);
+                            if ($__prod) {
+                                $__fbAtcEid = fbEventId();
+                                fbTrackAddToCart($__prod, $quantity, $__fbAtcEid);
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {}
+                
                 echo json_encode([
                     'success' => true,
                     'cart_count' => getCartCount(),
                     'cart_total' => getCartTotal(),
                     'message' => 'Product added to cart',
+                    'fb_event_id' => $__fbAtcEid,
                 ]);
             } else {
                 echo json_encode(['success' => false, 'message' => 'Product not found']);
