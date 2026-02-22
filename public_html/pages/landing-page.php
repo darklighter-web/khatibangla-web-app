@@ -619,14 +619,20 @@ foreach ($_lpFormFields as $_cf):
             <div>
                 <label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:6px"><?= $_l ?><?= $_star ?></label>
                 <div style="display:flex;gap:6px;flex-wrap:wrap">
-                    <label style="flex:1;min-width:0;display:flex;align-items:center;gap:6px;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px;transition:all .2s" class="lp-area-opt" onclick="lpAreaPick(this)">
-                        <input type="radio" name="shipping_area" value="inside_dhaka" style="accent-color:<?= $pc ?>"> ঢাকা<br><strong style="color:<?= $pc ?>">৳<?= $ofDhaka ?></strong>
+                    <label style="flex:1;min-width:0;text-align:center;padding:10px 8px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent" class="lp-area-opt" onclick="lpAreaPick(this)">
+                        <input type="radio" name="shipping_area" value="inside_dhaka" style="display:none">
+                        <div style="font-weight:600;font-size:13px;color:#1e293b;margin-bottom:2px">ঢাকার ভিতরে</div>
+                        <div style="font-size:12px;color:#94a3b8">৳<?= $ofDhaka ?></div>
                     </label>
-                    <label style="flex:1;min-width:0;display:flex;align-items:center;gap:6px;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px;transition:all .2s" class="lp-area-opt" onclick="lpAreaPick(this)">
-                        <input type="radio" name="shipping_area" value="dhaka_sub" style="accent-color:<?= $pc ?>"> ঢাকা উপশহর<br><strong style="color:<?= $pc ?>">৳<?= $ofSub ?></strong>
+                    <label style="flex:1;min-width:0;text-align:center;padding:10px 8px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent" class="lp-area-opt" onclick="lpAreaPick(this)">
+                        <input type="radio" name="shipping_area" value="dhaka_sub" style="display:none">
+                        <div style="font-weight:600;font-size:13px;color:#1e293b;margin-bottom:2px">ঢাকা উপশহর</div>
+                        <div style="font-size:12px;color:#94a3b8">৳<?= $ofSub ?></div>
                     </label>
-                    <label style="flex:1;min-width:0;display:flex;align-items:center;gap:6px;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px;transition:all .2s" class="lp-area-opt" onclick="lpAreaPick(this)">
-                        <input type="radio" name="shipping_area" value="outside_dhaka" checked style="accent-color:<?= $pc ?>"> বাংলাদেশ<br><strong style="color:<?= $pc ?>">৳<?= $ofOut ?></strong>
+                    <label style="flex:1;min-width:0;text-align:center;padding:10px 8px;border:1.5px solid <?= $pc ?>;border-radius:10px;cursor:pointer;transition:all .2s;background:<?= $pc ?>08;-webkit-tap-highlight-color:transparent" class="lp-area-opt lp-area-active" onclick="lpAreaPick(this)">
+                        <input type="radio" name="shipping_area" value="outside_dhaka" checked style="display:none">
+                        <div style="font-weight:600;font-size:13px;color:#1e293b;margin-bottom:2px">ঢাকার বাইরে</div>
+                        <div style="font-size:12px;color:<?= $pc ?>">৳<?= $ofOut ?></div>
                     </label>
                 </div>
             </div>
@@ -708,9 +714,21 @@ foreach ($_lpFormFields as $_cf):
         <?php /* product_selector not needed in popup — product already selected */ ?>
 <?php elseif ($_k === 'shipping_area'): ?>
         <div style="display:flex;gap:6px">
-            <label style="flex:1;display:flex;align-items:center;gap:4px;padding:8px;border:1.5px solid #e5e7eb;border-radius:8px;cursor:pointer;font-size:12px"><input type="radio" name="shipping_area" value="inside_dhaka" style="accent-color:<?= $pc ?>">ঢাকা ৳<?= $ofDhaka ?></label>
-            <label style="flex:1;display:flex;align-items:center;gap:4px;padding:8px;border:1.5px solid #e5e7eb;border-radius:8px;cursor:pointer;font-size:12px"><input type="radio" name="shipping_area" value="dhaka_sub" style="accent-color:<?= $pc ?>">উপশহর ৳<?= $ofSub ?></label>
-            <label style="flex:1;display:flex;align-items:center;gap:4px;padding:8px;border:1.5px solid #e5e7eb;border-radius:8px;cursor:pointer;font-size:12px"><input type="radio" name="shipping_area" value="outside_dhaka" checked style="accent-color:<?= $pc ?>">বাংলাদেশ ৳<?= $ofOut ?></label>
+            <label style="flex:1;text-align:center;padding:8px 4px;border:1.5px solid #e5e7eb;border-radius:8px;cursor:pointer;transition:all .2s" class="lp-area-opt" onclick="lpAreaPick(this)">
+                <input type="radio" name="shipping_area" value="inside_dhaka" style="display:none">
+                <div style="font-weight:600;font-size:11px;color:#1e293b;margin-bottom:1px">ঢাকার ভিতরে</div>
+                <div style="font-size:11px;color:#94a3b8">৳<?= $ofDhaka ?></div>
+            </label>
+            <label style="flex:1;text-align:center;padding:8px 4px;border:1.5px solid #e5e7eb;border-radius:8px;cursor:pointer;transition:all .2s" class="lp-area-opt" onclick="lpAreaPick(this)">
+                <input type="radio" name="shipping_area" value="dhaka_sub" style="display:none">
+                <div style="font-weight:600;font-size:11px;color:#1e293b;margin-bottom:1px">ঢাকা উপশহর</div>
+                <div style="font-size:11px;color:#94a3b8">৳<?= $ofSub ?></div>
+            </label>
+            <label style="flex:1;text-align:center;padding:8px 4px;border:1.5px solid <?= $pc ?>;border-radius:8px;cursor:pointer;transition:all .2s;background:<?= $pc ?>08" class="lp-area-opt lp-area-active" onclick="lpAreaPick(this)">
+                <input type="radio" name="shipping_area" value="outside_dhaka" checked style="display:none">
+                <div style="font-weight:600;font-size:11px;color:#1e293b;margin-bottom:1px">ঢাকার বাইরে</div>
+                <div style="font-size:11px;color:<?= $pc ?>">৳<?= $ofOut ?></div>
+            </label>
         </div>
 <?php elseif ($_k === 'notes'): ?>
         <input type="text" name="notes" placeholder="<?= $_l ?>" style="<?= $_pS ?>">
@@ -1085,13 +1103,21 @@ foreach ($_lpFormFields as $_cf):
     }
 
     window.lpAreaPick = function(el) {
-        // Only style area options within the same form
         var parentForm = el.closest('form') || el.closest('section');
         if (parentForm) {
-            parentForm.querySelectorAll('.lp-area-opt').forEach(function(o){o.style.borderColor='#e5e7eb';o.style.background='transparent'});
+            parentForm.querySelectorAll('.lp-area-opt').forEach(function(o){
+                o.style.borderColor='#e5e7eb';
+                o.style.background='#fff';
+                o.classList.remove('lp-area-active');
+                var pr = o.querySelectorAll('div')[1]; if(pr) pr.style.color='#94a3b8';
+            });
         }
-        el.style.borderColor = '<?= $pc ?>';
-        el.style.background = '<?= $pc ?>08';
+        el.style.borderColor = PC;
+        el.style.background = PC + '08';
+        el.classList.add('lp-area-active');
+        var pr = el.querySelectorAll('div')[1]; if(pr) pr.style.color = PC;
+        var radio = el.querySelector('input[type="radio"]');
+        if (radio) radio.checked = true;
         lpRecalcTotal();
     };
 
